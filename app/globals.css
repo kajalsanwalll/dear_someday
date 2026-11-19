@@ -1,26 +1,78 @@
+
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f5f0e8;
+  --paper-light: #fffcf8;
+  --ink: #493c38;
+  --muted: #958477;
+  --rose: #c7a6a3;
+  --lavender: #c8bbd0;
+  --taupe: #b4a18f;
+  --sage: #a8b2a0;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-paper-light: var(--paper-light);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-rose: var(--rose);
+  --color-lavender: var(--lavender);
+  --color-taupe: var(--taupe);
+  --color-sage: var(--sage);
+
+  --font-heading: var(--font-gloock);
+  --font-body: var(--font-instrument);
+  --font-handwriting: var(--font-caveat);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-instrument), sans-serif;
+  margin: 0;
+  min-height: 100vh;
+}
+
+::selection {
+  background: #d9c9d8;
+  color: var(--ink);
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+button {
+  font: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-gloock), serif;
+  font-weight: 400;
+}
+
+.handwritten {
+  font-family: var(--font-caveat), cursive;
+}
+
+.paper-texture {
+  background-image: url("/textures/paper.png");
+  background-repeat: repeat;
+  background-blend-mode: multiply;
 }
