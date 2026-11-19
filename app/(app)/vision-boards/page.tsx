@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,10 +10,12 @@ import {
   Heart,
   Trash2,
 } from "lucide-react";
+
 import {
   getBoards,
   saveBoards,
   createBoard,
+  deleteBoard,
   type VisionBoard,
 } from "@/lib/vision-boards";
 
@@ -48,13 +51,52 @@ export default function VisionBoardsPage() {
   const [category, setCategory] = useState("My dream life");
   const [coverColor, setCoverColor] = useState(covers[0]);
 
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Load boards
   useEffect(() => {
-    setBoards(getBoards());
-    setLoaded(true);
+    let cancelled = false;
+
+    async function loadBoards() {
+      try {
+        setError("");
+
+        const data = await getBoards();
+
+        if (!cancelled) {
+          setBoards(data);
+        }
+      } catch (err) {
+        console.error("Failed to load vision boards:", err);
+
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Couldn't load your boards. Please try again."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoaded(true);
+        }
+      }
+    }
+
+    loadBoards();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  function handleCreate() {
-    if (!title.trim()) return;
+  // Create board
+  async function handleCreate() {
+    if (!title.trim() || saving) return;
+
+    setSaving(true);
+    setError("");
 
     const board = createBoard(
       title.trim(),
@@ -65,23 +107,66 @@ export default function VisionBoardsPage() {
 
     const updated = [board, ...boards];
 
-    setBoards(updated);
-    saveBoards(updated);
+    try {
+      await saveBoards([board]);
 
-    setShowCreate(false);
-    setTitle("");
-    setDescription("");
+      setBoards(updated);
+      setShowCreate(false);
 
-    router.push(`/vision-boards/${board.id}`);
+      setTitle("");
+      setDescription("");
+      setCategory("My dream life");
+      setCoverColor(covers[0]);
+
+      router.push(`/vision-boards/${board.id}`);
+    } catch (err) {
+      console.error("Failed to create board:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Your board couldn't be saved. Please try again."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleDelete(id: string) {
-    const updated = boards.filter((board) => board.id !== id);
-    setBoards(updated);
-    saveBoards(updated);
+  // Delete board
+  async function handleDelete(id: string) {
+    if (saving) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      await deleteBoard(id);
+
+      setBoards((previous) =>
+        previous.filter((board) => board.id !== id)
+      );
+    } catch (err) {
+      console.error("Failed to delete board:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't delete this board. Please try again."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  if (!loaded) return null;
+  if (!loaded) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10 md:px-10">
+        <p className="text-sm text-[#958477]">
+          Gathering your little dreams...
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10 md:px-10">
@@ -100,17 +185,24 @@ export default function VisionBoardsPage() {
 
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-full bg-[#493C38] px-5 py-3 text-sm text-[#FFFCF8] transition hover:bg-[#66534B]"
+          disabled={saving}
+          className="flex items-center gap-2 rounded-full bg-[#493C38] px-5 py-3 text-sm text-[#FFFCF8] transition hover:bg-[#66534B] disabled:opacity-50"
         >
           <Plus size={16} />
           Create board
         </button>
       </div>
 
-      {/* Empty state */}
-      {boards.length === 0 && (
-        <div className="rounded-3xl border border-dashed border-[#D8CBBE] bg-[#FFFCF8] px-6 py-20 text-center">
+      {/* Error */}
+      {error && (
+        <div className="mb-6 rounded-xl bg-[#F4E3E0] px-4 py-3 text-sm text-[#9B5C55]">
+          {error}
+        </div>
+      )}
 
+      {/* Empty state: only when loading succeeded */}
+      {!error && boards.length === 0 && (
+        <div className="rounded-3xl border border-dashed border-[#D8CBBE] bg-[#FFFCF8] px-6 py-20 text-center">
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#EDE5DC]">
             <Sparkles className="text-[#958477]" size={26} />
           </div>
@@ -150,7 +242,6 @@ export default function VisionBoardsPage() {
                 style={{ backgroundColor: board.coverColor }}
               >
                 <div className="flex aspect-[4/3] flex-col items-center justify-center p-8 text-center">
-
                   <Heart
                     size={20}
                     className="mb-4 text-[#493C38]/50"
@@ -196,7 +287,8 @@ export default function VisionBoardsPage() {
                       handleDelete(board.id);
                     }
                   }}
-                  className="rounded-full p-2 text-[#B4A18F] opacity-0 transition hover:bg-[#E8DCD1] hover:text-[#493C38] group-hover:opacity-100"
+                  disabled={saving}
+                  className="rounded-full p-2 text-[#B4A18F] opacity-0 transition hover:bg-[#E8DCD1] hover:text-[#493C38] group-hover:opacity-100 disabled:opacity-40"
                   aria-label="Delete board"
                 >
                   <Trash2 size={15} />
@@ -211,7 +303,9 @@ export default function VisionBoardsPage() {
             className="flex aspect-[4/3] flex-col items-center justify-center rounded-2xl border border-dashed border-[#D8CBBE] text-[#958477] transition hover:bg-[#FFFCF8]"
           >
             <Plus size={24} />
-            <span className="mt-3 text-sm">A new someday...</span>
+            <span className="mt-3 text-sm">
+              A new someday...
+            </span>
           </button>
         </div>
       )}
@@ -220,7 +314,7 @@ export default function VisionBoardsPage() {
       {showCreate && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-[#493C38]/30 p-4 backdrop-blur-sm"
-          onClick={() => setShowCreate(false)}
+          onClick={() => !saving && setShowCreate(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -235,7 +329,6 @@ export default function VisionBoardsPage() {
             </h2>
 
             <div className="space-y-4">
-
               <div>
                 <label className="mb-2 block text-xs text-[#958477]">
                   What are we dreaming of?
@@ -275,7 +368,9 @@ export default function VisionBoardsPage() {
                   className="w-full rounded-xl border border-[#E5DAD0] bg-white px-4 py-3 text-sm text-[#493C38] outline-none"
                 >
                   {categories.map((item) => (
-                    <option key={item}>{item}</option>
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -289,6 +384,7 @@ export default function VisionBoardsPage() {
                   {covers.map((color) => (
                     <button
                       key={color}
+                      type="button"
                       onClick={() => setCoverColor(color)}
                       className={`h-9 w-9 rounded-full transition ${
                         coverColor === color
@@ -303,15 +399,16 @@ export default function VisionBoardsPage() {
 
               <button
                 onClick={handleCreate}
-                disabled={!title.trim()}
+                disabled={!title.trim() || saving}
                 className="mt-3 w-full rounded-full bg-[#493C38] py-3 text-sm text-white transition hover:bg-[#66534B] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Create my board ♡
+                {saving ? "Saving your dream..." : "Create my board ♡"}
               </button>
 
               <button
                 onClick={() => setShowCreate(false)}
-                className="w-full py-2 text-sm text-[#958477]"
+                disabled={saving}
+                className="w-full py-2 text-sm text-[#958477] disabled:opacity-40"
               >
                 Maybe later
               </button>

@@ -1,3 +1,4 @@
+
 import { supabase } from "@/lib/supabase/client";
 
 export type VisionBoard = {
@@ -27,11 +28,11 @@ type DatabaseBoard = {
   id: string;
   user_id: string;
   title: string;
-  description: string;
-  category: string;
+  description: string | null;
+  category: string | null;
   cover_color: string;
   created_at: string;
-  items: VisionBoardItem[];
+  items: VisionBoardItem[] | null;
 };
 
 function fromDatabase(board: DatabaseBoard): VisionBoard {
@@ -46,10 +47,7 @@ function fromDatabase(board: DatabaseBoard): VisionBoard {
   };
 }
 
-function toDatabase(
-  board: VisionBoard,
-  userId: string
-) {
+function toDatabase(board: VisionBoard, userId: string) {
   return {
     id: board.id,
     user_id: userId,
@@ -62,34 +60,127 @@ function toDatabase(
   };
 }
 
+function getMigrationKey(userId: string) {
+  return `${MIGRATION_KEY}-${userId}`;
+}
+
 /**
- * Migrate existing localStorage boards into Supabase.
- * Runs only once per logged-in user.
+ * Read existing local boards without modifying localStorage.
  */
-async function migrateLocalBoards(userId: string) {
+function getLocalBoards(): VisionBoard[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+
+    if (!stored) return [];
+
+    const parsed = JSON.parse(stored);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("Local vision boards data is not an array.");
+    }
+
+    return parsed as VisionBoard[];
+  } catch (error) {
+    console.error("Could not read local vision boards:", error);
+    throw new Error(
+      "Your locally saved vision boards could not be read. Your original data has been preserved."
+    );
+  }
+}
+
+/**
+ * Migrate localStorage boards into Supabase.
+ * Never delete the original localStorage data.
+ * Only mark migration complete after successful migration.
+ */
+async function migrateLocalBoards(userId: string): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const migrationKey = `${MIGRATION_KEY}-${userId}`;
+  const migrationKey = getMigrationKey(userId);
 
-  if (localStorage.getItem(migrationKey)) return;
-
-  const legacyBoards = JSON.parse(
-    localStorage.getItem(STORAGE_KEY) || "[]"
-  ) as VisionBoard[];
-
-  if (legacyBoards.length > 0) {
-    const { error } = await supabase
-      .from("vision_boards")
-      .upsert(
-        legacyBoards.map((board) => toDatabase(board, userId)),
-        { onConflict: "id" }
-      );
-
-    if (error) throw error;
+  if (localStorage.getItem(migrationKey) === "true") {
+    return;
   }
 
-  // Mark as migrated only after a successful migration
+  const localBoards = getLocalBoards();
+
+  if (localBoards.length === 0) {
+    localStorage.setItem(migrationKey, "true");
+    return;
+  }
+
+  console.info(
+    `Migrating ${localBoards.length} local vision boards...`
+  );
+
+  // Read existing database records first.
+  const { data: existingBoards, error: fetchError } = await supabase
+    .from("vision_boards")
+    .select("id")
+    .eq("user_id", userId);
+
+  if (fetchError) {
+    console.error("Migration: could not check existing boards:", fetchError);
+
+    throw new Error(
+      `Could not check existing vision boards: ${fetchError.message}`
+    );
+  }
+
+  const existingIds = new Set(
+    (existingBoards ?? []).map((board) => board.id)
+  );
+
+  // Only insert boards that do not already exist for this user.
+  const boardsToInsert = localBoards
+    .filter((board) => !existingIds.has(board.id))
+    .map((board) => toDatabase(board, userId));
+
+  if (boardsToInsert.length > 0) {
+    const { error: insertError } = await supabase
+      .from("vision_boards")
+      .insert(boardsToInsert);
+
+    if (insertError) {
+      console.error("Migration failed:", insertError);
+
+      throw new Error(
+        `Could not migrate vision boards: ${insertError.message}`
+      );
+    }
+  }
+
+  // Verify the migrated boards exist before marking migration complete.
+  const { data: verifiedBoards, error: verifyError } = await supabase
+    .from("vision_boards")
+    .select("id")
+    .eq("user_id", userId);
+
+  if (verifyError) {
+    throw new Error(
+      `Could not verify migrated boards: ${verifyError.message}`
+    );
+  }
+
+  const verifiedIds = new Set(
+    (verifiedBoards ?? []).map((board) => board.id)
+  );
+
+  const allMigrated = localBoards.every((board) =>
+    verifiedIds.has(board.id)
+  );
+
+  if (!allMigrated) {
+    throw new Error(
+      "Some vision boards could not be verified after migration."
+    );
+  }
+
   localStorage.setItem(migrationKey, "true");
+
+  console.info("Vision board migration completed successfully.");
 }
 
 /**
@@ -101,9 +192,15 @@ export async function getBoards(): Promise<VisionBoard[]> {
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError) throw authError;
-  if (!user) return [];
+  if (authError) {
+    throw new Error(`Authentication failed: ${authError.message}`);
+  }
 
+  if (!user) {
+    throw new Error("You must be logged in to load vision boards.");
+  }
+
+  // Preserve and migrate existing local boards first.
   await migrateLocalBoards(user.id);
 
   const { data, error } = await supabase
@@ -112,54 +209,94 @@ export async function getBoards(): Promise<VisionBoard[]> {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error("Supabase getBoards error:", error);
+
+    throw new Error(
+      `Failed to load vision boards: ${error.message} (Code: ${error.code})`
+    );
+  }
 
   return (data as DatabaseBoard[]).map(fromDatabase);
 }
 
 /**
- * Save the user's boards to Supabase.
+ * Save the supplied vision boards.
+ *
+ * IMPORTANT:
+ * This function does not delete boards missing from the array.
  */
-export async function saveBoards(boards: VisionBoard[]) {
+export async function saveBoards(
+  boards: VisionBoard[]
+): Promise<void> {
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError) throw authError;
-  if (!user) throw new Error("You must be logged in to save vision boards.");
-
-  if (boards.length > 0) {
-    const { error } = await supabase
-      .from("vision_boards")
-      .upsert(
-        boards.map((board) => toDatabase(board, user.id)),
-        { onConflict: "id" }
-      );
-
-    if (error) throw error;
+  if (authError) {
+    throw new Error(`Authentication failed: ${authError.message}`);
   }
 
-  // Remove boards that no longer exist in the provided list.
-  let deleteQuery = supabase
+  if (!user) {
+    throw new Error("You must be logged in to save vision boards.");
+  }
+
+  if (boards.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase
     .from("vision_boards")
-    .delete()
-    .eq("user_id", user.id);
+    .upsert(
+      boards.map((board) => toDatabase(board, user.id)),
+      { onConflict: "id" }
+    );
 
-  if (boards.length > 0) {
-    const boardIds = boards.map((board) => board.id);
+  if (error) {
+    console.error("Supabase saveBoards error:", error);
 
-    deleteQuery = deleteQuery.not("id", "in", `(${boardIds.join(",")})`);
+    throw new Error(
+      `Failed to save vision boards: ${error.message} (Code: ${error.code})`
+    );
   }
-
-  const { error: deleteError } = await deleteQuery;
-
-  if (deleteError) throw deleteError;
 }
 
 /**
- * Create a new vision board locally.
- * It will be persisted when saveBoards() is called.
+ * Explicitly delete a single vision board.
+ */
+export async function deleteBoard(boardId: string): Promise<void> {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(`Authentication failed: ${authError.message}`);
+  }
+
+  if (!user) {
+    throw new Error("You must be logged in to delete vision boards.");
+  }
+
+  const { error } = await supabase
+    .from("vision_boards")
+    .delete()
+    .eq("id", boardId)
+    .eq("user_id", user.id);
+
+  if (error) {
+    console.error("Supabase deleteBoard error:", error);
+
+    throw new Error(
+      `Failed to delete vision board: ${error.message} (Code: ${error.code})`
+    );
+  }
+}
+
+/**
+ * Create a new vision board.
+ * It is persisted when saveBoards() is called.
  */
 export function createBoard(
   title: string,

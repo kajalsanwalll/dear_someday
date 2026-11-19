@@ -1,4 +1,6 @@
+
 "use client";
+
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -6,9 +8,7 @@ import {
   ImagePlus,
   Quote,
   StickyNote,
-  Trash2,
   Heart,
-  Plus,
   X,
   Sparkles,
 } from "lucide-react";
@@ -32,9 +32,9 @@ export default function VisionBoardEditor() {
       <VisionBoardEditorContent />
     </Suspense>
   );
-  }
+}
 
- function VisionBoardEditorContent() {
+function VisionBoardEditorContent() {
   const params = useParams();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -43,126 +43,188 @@ export default function VisionBoardEditor() {
 
   const [board, setBoard] = useState<VisionBoard | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [error, setError] = useState("");
 
   const [modal, setModal] = useState<"quote" | "note" | null>(null);
   const [text, setText] = useState("");
   const [caption, setCaption] = useState("");
 
+  // Load board from Supabase
   useEffect(() => {
-    const boards = getBoards();
-    const found = boards.find((b) => b.id === id);
+    let cancelled = false;
 
-    setBoard(found || null);
-    setLoaded(true);
+    async function loadBoard() {
+      try {
+        setError("");
+
+        const boards = await getBoards();
+
+        const found = boards.find((b) => b.id === id);
+
+        if (!cancelled) {
+          setBoard(found || null);
+        }
+      } catch (err) {
+        console.error("Failed to load vision board:", err);
+
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Couldn't load this vision board."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoaded(true);
+        }
+      }
+    }
+
+    loadBoard();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
-  function updateBoard(updated: VisionBoard) {
+  // Update board and persist changes
+  async function updateBoard(updated: VisionBoard) {
+    if (!board || saving) return;
+
+    const previous = board;
+
+    setSaving(true);
+    setError("");
+
+    // Optimistic update
     setBoard(updated);
 
-    const boards = getBoards();
-    const next = boards.map((b) => (b.id === updated.id ? updated : b));
+    try {
+      // Save only this board. Never delete unrelated boards.
+      await saveBoards([updated]);
+    } catch (err) {
+      console.error("Failed to save vision board:", err);
 
-    saveBoards(next);
+      // Restore previous state if saving fails.
+      setBoard(previous);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Your changes couldn't be saved. Please try again."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
+  // Generate scrapbook-style positions
   function randomPosition(existingItems: VisionBoardItem[] = []) {
-  // Spread items across the canvas in a scrapbook-like grid
-  const slots = [
-    { x: 5, y: 5 },
-    { x: 36, y: 7 },
-    { x: 67, y: 5 },
+    const slots = [
+      { x: 5, y: 5 },
+      { x: 36, y: 7 },
+      { x: 67, y: 5 },
 
-    { x: 8, y: 29 },
-    { x: 39, y: 31 },
-    { x: 70, y: 28 },
+      { x: 8, y: 29 },
+      { x: 39, y: 31 },
+      { x: 70, y: 28 },
 
-    { x: 4, y: 53 },
-    { x: 35, y: 55 },
-    { x: 66, y: 52 },
+      { x: 4, y: 53 },
+      { x: 35, y: 55 },
+      { x: 66, y: 52 },
 
-    { x: 14, y: 75 },
-    { x: 45, y: 76 },
-    { x: 72, y: 73 },
-  ];
+      { x: 14, y: 75 },
+      { x: 45, y: 76 },
+      { x: 72, y: 73 },
+    ];
 
-  // Find slots that are not already occupied
-  const available = slots.filter((slot) => {
-    return !existingItems.some((item) => {
-      const itemX = item.x ?? 10;
-      const itemY = item.y ?? 10;
+    const available = slots.filter((slot) => {
+      return !existingItems.some((item) => {
+        const itemX = item.x ?? 10;
+        const itemY = item.y ?? 10;
 
-      return (
-        Math.abs(itemX - slot.x) < 18 &&
-        Math.abs(itemY - slot.y) < 16
-      );
+        return (
+          Math.abs(itemX - slot.x) < 18 &&
+          Math.abs(itemY - slot.y) < 16
+        );
+      });
     });
-  });
 
-  // Prefer a free slot
-  const pool = available.length > 0 ? available : slots;
+    const pool = available.length > 0 ? available : slots;
 
-  const position = pool[Math.floor(Math.random() * pool.length)];
-
-  // Tiny variation so it doesn't look too perfectly aligned
-  return {
-    x: Math.min(82, Math.max(3, position.x + (Math.random() * 6 - 3))),
-    y: Math.min(82, Math.max(3, position.y + (Math.random() * 5 - 2.5))),
-  };
- }
-
-const columns = 4;
-const rowSpacing = 360;
-
-function getCanvasHeight(itemCount: number) {
-  const rows = Math.max(1, Math.ceil(itemCount / columns));
-  return Math.max(680, rows * rowSpacing + 100);
-}
-
-function arrangeBoard() {
-  if (!board || board.items.length === 0) return;
-
-  const height = getCanvasHeight(board.items.length);
-
-  const xPositions = [5, 27, 51, 75];
-
-  const arrangedItems = board.items.map((item, index) => {
-    const row = Math.floor(index / columns);
-    const column = index % columns;
-
-    const stagger = [0, 35, 10, 45][column];
+    const position = pool[Math.floor(Math.random() * pool.length)];
 
     return {
-      ...item,
-      x: xPositions[column] + (Math.random() * 3 - 1.5),
-      y: ((row * rowSpacing + stagger + 30) / height) * 100,
-      rotation: Math.random() * 6 - 3,
+      x: Math.min(
+        82,
+        Math.max(3, position.x + (Math.random() * 6 - 3))
+      ),
+      y: Math.min(
+        82,
+        Math.max(3, position.y + (Math.random() * 5 - 2.5))
+      ),
     };
-  });
+  }
 
-  updateBoard({
-    ...board,
-    items: arrangedItems,
-  });
-}
+  const columns = 4;
+  const rowSpacing = 360;
 
-  function addItem(item: VisionBoardItem) {
-    if (!board) return;
+  function getCanvasHeight(itemCount: number) {
+    const rows = Math.max(1, Math.ceil(itemCount / columns));
+    return Math.max(680, rows * rowSpacing + 100);
+  }
 
-    updateBoard({
+  // Arrange items across the canvas
+  async function arrangeBoard() {
+    if (!board || board.items.length < 2 || saving) return;
+
+    const height = getCanvasHeight(board.items.length);
+    const xPositions = [5, 27, 51, 75];
+
+    const arrangedItems = board.items.map((item, index) => {
+      const row = Math.floor(index / columns);
+      const column = index % columns;
+
+      const stagger = [0, 35, 10, 45][column];
+
+      return {
+        ...item,
+        x: xPositions[column] + (Math.random() * 3 - 1.5),
+        y: ((row * rowSpacing + stagger + 30) / height) * 100,
+        rotation: Math.random() * 6 - 3,
+      };
+    });
+
+    await updateBoard({
+      ...board,
+      items: arrangedItems,
+    });
+  }
+
+  // Add an item
+  async function addItem(item: VisionBoardItem) {
+    if (!board || saving) return;
+
+    await updateBoard({
       ...board,
       items: [...board.items, item],
     });
   }
 
-  function deleteItem(itemId: string) {
-    if (!board) return;
+  // Delete an item
+  async function deleteItem(itemId: string) {
+    if (!board || saving) return;
 
-    updateBoard({
+    await updateBoard({
       ...board,
       items: board.items.filter((item) => item.id !== itemId),
     });
   }
 
+  // Compress uploaded images
   async function compressImage(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -172,10 +234,17 @@ function arrangeBoard() {
         image.src = reader.result as string;
       };
 
-      reader.onerror = reject;
+      reader.onerror = () => {
+        reject(new Error("Could not read the image."));
+      };
+
+      image.onerror = () => {
+        reject(new Error("Could not process the image."));
+      };
 
       image.onload = () => {
         const maxSize = 1000;
+
         const scale = Math.min(
           1,
           maxSize / Math.max(image.width, image.height)
@@ -189,11 +258,17 @@ function arrangeBoard() {
         const ctx = canvas.getContext("2d");
 
         if (!ctx) {
-          reject(new Error("Could not process image"));
+          reject(new Error("Could not process image."));
           return;
         }
 
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(
+          image,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
 
         resolve(canvas.toDataURL("image/jpeg", 0.78));
       };
@@ -202,54 +277,139 @@ function arrangeBoard() {
     });
   }
 
+  // Upload multiple images and save them together
   async function handleImages(files: FileList | null) {
-    if (!files || !board) return;
+    if (!files || !board || saving) return;
 
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith("image/")) continue;
+    setError("");
 
-      try {
+    const selectedFiles = Array.from(files).filter((file) =>
+      file.type.startsWith("image/")
+    );
+
+    if (selectedFiles.length === 0) return;
+
+    setSaving(true);
+
+    const previous = board;
+    let updatedBoard = board;
+
+    try {
+      for (const file of selectedFiles) {
         const src = await compressImage(file);
-        const position = randomPosition(board.items);
 
-        addItem({
+        const position = randomPosition(updatedBoard.items);
+
+        const newItem: VisionBoardItem = {
           id: crypto.randomUUID(),
           type: "image",
           content: src,
           caption: "",
           rotation: Math.random() * 8 - 4,
           ...position,
-        });
-      } catch (error) {
-        console.error("Image upload failed:", error);
-      }
-    }
+        };
 
-    if (fileRef.current) {
-      fileRef.current.value = "";
+        updatedBoard = {
+          ...updatedBoard,
+          items: [...updatedBoard.items, newItem],
+        };
+      }
+
+      setBoard(updatedBoard);
+
+      await saveBoards([updatedBoard]);
+    } catch (err) {
+      console.error("Image upload failed:", err);
+
+      setBoard(previous);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Your images couldn't be saved."
+      );
+    } finally {
+      setSaving(false);
+
+      if (fileRef.current) {
+        fileRef.current.value = "";
+      }
     }
   }
 
-  function handleTextItem() {
-    if (!text.trim() || !board) return;
+  // Add quote or note
+  async function handleTextItem() {
+    if (!text.trim() || !board || saving || !modal) return;
 
     const position = randomPosition(board.items);
 
-    addItem({
+    const newItem: VisionBoardItem = {
       id: crypto.randomUUID(),
-      type: modal!,
+      type: modal,
       content: text.trim(),
       caption: caption.trim(),
       rotation: Math.random() * 6 - 3,
       ...position,
-    });
+    };
+
+    await addItem(newItem);
 
     setText("");
     setCaption("");
     setModal(null);
   }
 
-  if (!loaded) return null;
+  // Update image caption
+  async function editCaption(item: VisionBoardItem) {
+    if (!board || saving) return;
+
+    const newCaption = prompt(
+      "Write a little caption ♡",
+      item.caption || ""
+    );
+
+    if (newCaption === null) return;
+
+    await updateBoard({
+      ...board,
+      items: board.items.map((i) =>
+        i.id === item.id
+          ? { ...i, caption: newCaption }
+          : i
+      ),
+    });
+  }
+
+  if (!loaded) {
+    return (
+      <div className="mx-auto max-w-7xl px-6 py-16 text-[#958477]">
+        Opening your little dream space... ♡
+      </div>
+    );
+  }
+
+  if (error && !board) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-6 text-center">
+        <Heart className="mb-4 text-[#B4A18F]" size={30} />
+
+        <h1 className="font-[var(--font-gloock)] text-2xl text-[#493C38]">
+          Couldn't open your dream space
+        </h1>
+
+        <p className="mt-3 text-sm text-[#958477]">
+          {error}
+        </p>
+
+        <button
+          onClick={() => router.push("/vision-boards")}
+          className="mt-5 text-sm text-[#958477] underline underline-offset-4"
+        >
+          Back to your boards
+        </button>
+      </div>
+    );
+  }
 
   if (!board) {
     return (
@@ -305,12 +465,27 @@ function arrangeBoard() {
         </p>
       </div>
 
+      {/* Save status */}
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs text-[#958477]">
+          {saving ? "Saving your dreams..." : "Your little space ♡"}
+        </p>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="mb-5 rounded-xl bg-[#F4E3E0] px-4 py-3 text-sm text-[#9B5C55]">
+          {error}
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="mb-6 flex flex-wrap gap-2">
 
         <button
           onClick={() => fileRef.current?.click()}
-          className="flex items-center gap-2 rounded-full bg-[#493C38] px-4 py-2.5 text-sm text-white transition hover:bg-[#66534B]"
+          disabled={saving}
+          className="flex items-center gap-2 rounded-full bg-[#493C38] px-4 py-2.5 text-sm text-white transition hover:bg-[#66534B] disabled:opacity-50"
         >
           <ImagePlus size={16} />
           Add photos
@@ -318,7 +493,8 @@ function arrangeBoard() {
 
         <button
           onClick={() => setModal("quote")}
-          className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8]"
+          disabled={saving}
+          className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8] disabled:opacity-50"
         >
           <Quote size={15} />
           Add quote
@@ -326,20 +502,21 @@ function arrangeBoard() {
 
         <button
           onClick={() => setModal("note")}
-          className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8]"
+          disabled={saving}
+          className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8] disabled:opacity-50"
         >
           <StickyNote size={15} />
           Add a note
         </button>
 
         <button
-  onClick={arrangeBoard}
-  disabled={board.items.length < 2}
-  className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8] disabled:opacity-40"
- >
-  <Sparkles size={15} />
-  Arrange my board
- </button>
+          onClick={arrangeBoard}
+          disabled={board.items.length < 2 || saving}
+          className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8] disabled:opacity-40"
+        >
+          <Sparkles size={15} />
+          Arrange my board
+        </button>
 
         <input
           ref={fileRef}
@@ -353,19 +530,18 @@ function arrangeBoard() {
 
       {/* Canvas */}
       <section
-  className="relative overflow-hidden rounded-2xl border border-[#E5DAD0] shadow-sm transition-all duration-500"
-  style={{
-    height: `${getCanvasHeight(board.items.length)}px`,
-    backgroundColor: board.coverColor,
-    backgroundImage:
-      "radial-gradient(rgba(73,60,56,0.08) 0.6px, transparent 0.6px)",
-    backgroundSize: "22px 22px",
-  }}
- >
-        {/* Canvas empty state */}
+        className="relative overflow-hidden rounded-2xl border border-[#E5DAD0] shadow-sm transition-all duration-500"
+        style={{
+          height: `${getCanvasHeight(board.items.length)}px`,
+          backgroundColor: board.coverColor,
+          backgroundImage:
+            "radial-gradient(rgba(73,60,56,0.08) 0.6px, transparent 0.6px)",
+          backgroundSize: "22px 22px",
+        }}
+      >
+        {/* Empty state */}
         {board.items.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
-
             <div className="mb-5 rounded-full bg-white/40 p-5">
               <Sparkles size={28} className="text-[#493C38]/50" />
             </div>
@@ -381,6 +557,7 @@ function arrangeBoard() {
 
             <button
               onClick={() => fileRef.current?.click()}
+              disabled={saving}
               className="mt-6 rounded-full bg-white/60 px-5 py-3 text-sm text-[#493C38] transition hover:bg-white/80"
             >
               Start collecting ♡
@@ -403,7 +580,8 @@ function arrangeBoard() {
             {/* Delete button */}
             <button
               onClick={() => deleteItem(item.id)}
-              className="absolute -right-2 -top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-[#493C38] text-white opacity-0 shadow transition group-hover:opacity-100"
+              disabled={saving}
+              className="absolute -right-2 -top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-[#493C38] text-white opacity-0 shadow transition group-hover:opacity-100 disabled:opacity-40"
               aria-label="Remove item"
             >
               <X size={13} />
@@ -423,24 +601,9 @@ function arrangeBoard() {
                 </p>
 
                 <button
-                  onClick={() => {
-                    const newCaption = prompt(
-                      "Write a little caption ♡",
-                      item.caption || ""
-                    );
-
-                    if (newCaption !== null) {
-                      updateBoard({
-                        ...board,
-                        items: board.items.map((i) =>
-                          i.id === item.id
-                            ? { ...i, caption: newCaption }
-                            : i
-                        ),
-                      });
-                    }
-                  }}
-                  className="mt-1 w-full text-center text-[10px] text-[#B4A18F] opacity-0 transition group-hover:opacity-100"
+                  onClick={() => editCaption(item)}
+                  disabled={saving}
+                  className="mt-1 w-full text-center text-[10px] text-[#B4A18F] opacity-0 transition group-hover:opacity-100 disabled:opacity-40"
                 >
                   Add caption
                 </button>
@@ -487,7 +650,7 @@ function arrangeBoard() {
       {modal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-[#493C38]/30 p-4 backdrop-blur-sm"
-          onClick={() => setModal(null)}
+          onClick={() => !saving && setModal(null)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -495,11 +658,14 @@ function arrangeBoard() {
           >
             <div className="mb-5 flex items-center justify-between">
               <h2 className="font-[var(--font-gloock)] text-2xl text-[#493C38]">
-                {modal === "quote" ? "Words to keep ♡" : "A little reminder"}
+                {modal === "quote"
+                  ? "Words to keep ♡"
+                  : "A little reminder"}
               </h2>
 
               <button
                 onClick={() => setModal(null)}
+                disabled={saving}
                 className="rounded-full p-2 text-[#958477] hover:bg-[#F5F0E8]"
               >
                 <X size={18} />
@@ -530,10 +696,10 @@ function arrangeBoard() {
 
             <button
               onClick={handleTextItem}
-              disabled={!text.trim()}
+              disabled={!text.trim() || saving}
               className="mt-4 w-full rounded-full bg-[#493C38] py-3 text-sm text-white transition hover:bg-[#66534B] disabled:opacity-40"
             >
-              Pin it to my board ♡
+              {saving ? "Saving..." : "Pin it to my board ♡"}
             </button>
           </div>
         </div>
