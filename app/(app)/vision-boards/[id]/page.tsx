@@ -1,6 +1,5 @@
 "use client";
-
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -22,6 +21,20 @@ import {
 } from "@/lib/vision-boards";
 
 export default function VisionBoardEditor() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-7xl px-6 py-16 text-[#958477]">
+          Opening your little dream space... ♡
+        </div>
+      }
+    >
+      <VisionBoardEditorContent />
+    </Suspense>
+  );
+  }
+
+ function VisionBoardEditorContent() {
   const params = useParams();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -52,12 +65,85 @@ export default function VisionBoardEditor() {
     saveBoards(next);
   }
 
-  function randomPosition() {
+  function randomPosition(existingItems: VisionBoardItem[] = []) {
+  // Spread items across the canvas in a scrapbook-like grid
+  const slots = [
+    { x: 5, y: 5 },
+    { x: 36, y: 7 },
+    { x: 67, y: 5 },
+
+    { x: 8, y: 29 },
+    { x: 39, y: 31 },
+    { x: 70, y: 28 },
+
+    { x: 4, y: 53 },
+    { x: 35, y: 55 },
+    { x: 66, y: 52 },
+
+    { x: 14, y: 75 },
+    { x: 45, y: 76 },
+    { x: 72, y: 73 },
+  ];
+
+  // Find slots that are not already occupied
+  const available = slots.filter((slot) => {
+    return !existingItems.some((item) => {
+      const itemX = item.x ?? 10;
+      const itemY = item.y ?? 10;
+
+      return (
+        Math.abs(itemX - slot.x) < 18 &&
+        Math.abs(itemY - slot.y) < 16
+      );
+    });
+  });
+
+  // Prefer a free slot
+  const pool = available.length > 0 ? available : slots;
+
+  const position = pool[Math.floor(Math.random() * pool.length)];
+
+  // Tiny variation so it doesn't look too perfectly aligned
+  return {
+    x: Math.min(82, Math.max(3, position.x + (Math.random() * 6 - 3))),
+    y: Math.min(82, Math.max(3, position.y + (Math.random() * 5 - 2.5))),
+  };
+ }
+
+const columns = 4;
+const rowSpacing = 360;
+
+function getCanvasHeight(itemCount: number) {
+  const rows = Math.max(1, Math.ceil(itemCount / columns));
+  return Math.max(680, rows * rowSpacing + 100);
+}
+
+function arrangeBoard() {
+  if (!board || board.items.length === 0) return;
+
+  const height = getCanvasHeight(board.items.length);
+
+  const xPositions = [5, 27, 51, 75];
+
+  const arrangedItems = board.items.map((item, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+
+    const stagger = [0, 35, 10, 45][column];
+
     return {
-      x: Math.floor(Math.random() * 60) + 5,
-      y: Math.floor(Math.random() * 55) + 5,
+      ...item,
+      x: xPositions[column] + (Math.random() * 3 - 1.5),
+      y: ((row * rowSpacing + stagger + 30) / height) * 100,
+      rotation: Math.random() * 6 - 3,
     };
-  }
+  });
+
+  updateBoard({
+    ...board,
+    items: arrangedItems,
+  });
+}
 
   function addItem(item: VisionBoardItem) {
     if (!board) return;
@@ -124,7 +210,7 @@ export default function VisionBoardEditor() {
 
       try {
         const src = await compressImage(file);
-        const position = randomPosition();
+        const position = randomPosition(board.items);
 
         addItem({
           id: crypto.randomUUID(),
@@ -147,7 +233,7 @@ export default function VisionBoardEditor() {
   function handleTextItem() {
     if (!text.trim() || !board) return;
 
-    const position = randomPosition();
+    const position = randomPosition(board.items);
 
     addItem({
       id: crypto.randomUUID(),
@@ -246,6 +332,15 @@ export default function VisionBoardEditor() {
           Add a note
         </button>
 
+        <button
+  onClick={arrangeBoard}
+  disabled={board.items.length < 2}
+  className="flex items-center gap-2 rounded-full border border-[#D8CBBE] bg-[#FFFCF8] px-4 py-2.5 text-sm text-[#493C38] transition hover:bg-[#F5F0E8] disabled:opacity-40"
+ >
+  <Sparkles size={15} />
+  Arrange my board
+ </button>
+
         <input
           ref={fileRef}
           type="file"
@@ -258,14 +353,15 @@ export default function VisionBoardEditor() {
 
       {/* Canvas */}
       <section
-        className="relative min-h-[700px] overflow-hidden rounded-2xl border border-[#E5DAD0] shadow-sm md:min-h-[850px]"
-        style={{
-          backgroundColor: board.coverColor,
-          backgroundImage:
-            "radial-gradient(rgba(73,60,56,0.08) 0.7px, transparent 0.7px)",
-          backgroundSize: "18px 18px",
-        }}
-      >
+  className="relative overflow-hidden rounded-2xl border border-[#E5DAD0] shadow-sm transition-all duration-500"
+  style={{
+    height: `${getCanvasHeight(board.items.length)}px`,
+    backgroundColor: board.coverColor,
+    backgroundImage:
+      "radial-gradient(rgba(73,60,56,0.08) 0.6px, transparent 0.6px)",
+    backgroundSize: "22px 22px",
+  }}
+ >
         {/* Canvas empty state */}
         {board.items.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
@@ -315,11 +411,11 @@ export default function VisionBoardEditor() {
 
             {/* Image polaroid */}
             {item.type === "image" && (
-              <div className="w-[160px] bg-[#FFFCF8] p-2 pb-4 shadow-lg transition duration-200 group-hover:scale-[1.03] sm:w-[190px]">
+              <div className="w-[190px] bg-[#FFFCF8] p-3 pb-5 shadow-lg transition duration-200 group-hover:scale-[1.03] sm:w-[240px]">
                 <img
                   src={item.content}
                   alt={item.caption || "Vision board image"}
-                  className="aspect-[4/5] w-full object-cover"
+                  className="aspect-[3/4] w-full object-cover"
                 />
 
                 <p className="mt-2 min-h-[20px] text-center font-[var(--font-caveat)] text-lg text-[#493C38]">
@@ -353,13 +449,13 @@ export default function VisionBoardEditor() {
 
             {/* Quote */}
             {item.type === "quote" && (
-              <div className="max-w-[230px] bg-[#FFFCF8]/85 p-5 shadow-md sm:max-w-[270px]">
+              <div className="max-w-[200px] bg-[#FFFCF8]/90 p-4 shadow-md sm:max-w-[225px]">
                 <Quote
                   size={17}
                   className="mb-3 text-[#B4A18F]"
                 />
 
-                <p className="font-[var(--font-gloock)] text-lg leading-relaxed text-[#493C38]">
+                <p className="font-[var(--font-gloock)] text-base leading-relaxed text-[#493C38]">
                   {item.content}
                 </p>
 
@@ -373,8 +469,8 @@ export default function VisionBoardEditor() {
 
             {/* Note */}
             {item.type === "note" && (
-              <div className="w-[190px] bg-[#F7E9B9] p-5 shadow-md sm:w-[220px]">
-                <p className="whitespace-pre-wrap font-[var(--font-caveat)] text-xl leading-relaxed text-[#493C38]">
+              <div className="w-[165px] bg-[#F7E9B9] p-4 shadow-md sm:w-[190px]">
+                <p className="whitespace-pre-wrap font-[var(--font-caveat)] text-lg leading-relaxed text-[#493C38]">
                   {item.content}
                 </p>
               </div>
