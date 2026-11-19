@@ -1,6 +1,6 @@
-
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -24,15 +24,29 @@ const navigation = [
 ];
 
 export default function Sidebar() {
+  return (
+    <Suspense
+      fallback={
+        <aside className="hidden md:flex fixed left-0 top-0 z-30 h-screen w-[250px] flex-col border-r border-[#493c38]/10 bg-[#eee7dc] px-6 py-8" />
+      }
+    >
+      <SidebarContent />
+    </Suspense>
+  );
+}
+
+function SidebarContent() {
   const pathname = usePathname();
 
   return (
     <aside className="hidden md:flex fixed left-0 top-0 z-30 h-screen w-[250px] flex-col border-r border-[#493c38]/10 bg-[#eee7dc] px-6 py-8">
+
       {/* Brand */}
       <Link href="/home" className="mb-12 block">
         <h1 className="font-heading text-2xl tracking-tight">
           dear, someday.
         </h1>
+
         <p className="handwritten mt-1 text-lg text-muted">
           a little place for my dreams
         </p>
@@ -46,7 +60,11 @@ export default function Sidebar() {
       <nav className="flex flex-col gap-1">
         {navigation.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href;
+
+          const active =
+            pathname === item.href ||
+            (item.href !== "/home" &&
+              pathname.startsWith(`${item.href}/`));
 
           return (
             <Link
@@ -78,7 +96,11 @@ export default function Sidebar() {
       <div className="mt-auto">
         <Link
           href="/settings"
-          className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-muted hover:bg-[#e5dbd0]"
+          className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
+            pathname === "/settings"
+              ? "bg-[#dcd0c4] text-ink"
+              : "text-muted hover:bg-[#e5dbd0]"
+          }`}
         >
           <Settings size={17} />
           Settings
