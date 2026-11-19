@@ -1,7 +1,55 @@
+"use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Heart } from "lucide-react";
+import { supabase } from "@/lib/supabase/client";
 
 export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const handleAuthRedirect = async () => {
+      // Check whether Supabase returned verification tokens
+      const hash = window.location.hash;
+
+      if (hash.includes("access_token")) {
+        const params = new URLSearchParams(hash.substring(1));
+
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+
+        // Explicitly establish the session if tokens are present
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (!error) {
+            window.history.replaceState(
+              null,
+              "",
+              window.location.pathname
+            );
+
+            router.replace("/home");
+            return;
+          }
+        }
+      }
+
+      // Also redirect if the user already has a session
+      const { data } = await supabase.auth.getSession();
+
+      if (data.session) {
+        router.replace("/home");
+      }
+    };
+
+    handleAuthRedirect();
+  }, [router]);
+
   return (
     <main className="min-h-screen bg-paper px-6 py-8 md:px-16 md:py-12">
       {/* Header */}
