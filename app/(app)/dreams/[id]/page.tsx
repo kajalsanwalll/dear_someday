@@ -35,7 +35,7 @@ const statusLabels: Record<string, string> = {
   manifested: "Manifested ✨",
 };
 
-export default function DreamDetailsPage() {
+function DreamDetailsContent() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
@@ -71,9 +71,7 @@ export default function DreamDetailsPage() {
     loadDream();
   }, [id]);
 
-  async function saveChanges(
-    updates: Partial<Dream>,
-  ) {
+  async function saveChanges(updates: Partial<Dream>) {
     if (!dream) return;
 
     setSaving(true);
@@ -121,11 +119,17 @@ export default function DreamDetailsPage() {
 
     let nextStatus = dream.status;
 
-    if (updatedSteps.length > 0 && completedCount === updatedSteps.length) {
+    if (
+      updatedSteps.length > 0 &&
+      completedCount === updatedSteps.length
+    ) {
       if (dream.status !== "manifested") {
         nextStatus = "almost_there";
       }
-    } else if (completedCount > 0 && dream.status === "dreaming") {
+    } else if (
+      completedCount > 0 &&
+      dream.status === "dreaming"
+    ) {
       nextStatus = "in_progress";
     }
 
@@ -170,7 +174,10 @@ export default function DreamDetailsPage() {
 
     await saveChanges({
       status: "manifested",
-      updates: [manifestationUpdate, ...(dream.updates || [])],
+      updates: [
+        manifestationUpdate,
+        ...(dream.updates || []),
+      ],
     });
   }
 
@@ -231,7 +238,7 @@ export default function DreamDetailsPage() {
           Back to my dreams
         </button>
 
-        {/* Hero */}
+        {/* Hero section */}
         <section
           className="rounded-3xl border p-7 md:p-10"
           style={{
@@ -309,6 +316,7 @@ export default function DreamDetailsPage() {
               style={{ color: muted }}
             >
               <CalendarDays size={16} />
+
               Target date:{" "}
               {new Date(
                 dream.target_date + "T00:00:00",
@@ -321,7 +329,7 @@ export default function DreamDetailsPage() {
           )}
         </section>
 
-        {/* Progress */}
+        {/* Progress section */}
         <section
           className="mt-6 rounded-2xl border p-6"
           style={{
@@ -335,6 +343,7 @@ export default function DreamDetailsPage() {
 
               <div>
                 <h2 className="font-medium">My progress</h2>
+
                 <p
                   className="mt-1 text-sm"
                   style={{ color: muted }}
@@ -394,7 +403,7 @@ export default function DreamDetailsPage() {
             Every little step is bringing you closer.
           </p>
 
-          {/* Add step */}
+          {/* Add step input */}
           <div className="mt-6 flex gap-2">
             <input
               value={newStep}
@@ -424,7 +433,7 @@ export default function DreamDetailsPage() {
             </button>
           </div>
 
-          {/* Steps */}
+          {/* Steps list */}
           <div className="mt-5 space-y-3">
             {dream.steps?.map((step) => (
               <div
@@ -457,7 +466,9 @@ export default function DreamDetailsPage() {
 
                 <span
                   className={`flex-1 text-sm ${
-                    step.completed ? "line-through opacity-50" : ""
+                    step.completed
+                      ? "line-through opacity-50"
+                      : ""
                   }`}
                 >
                   {step.title}
@@ -488,7 +499,7 @@ export default function DreamDetailsPage() {
           </div>
         </section>
 
-        {/* Journal */}
+        {/* Dream journal */}
         <section
           className="mt-6 rounded-2xl border p-6 md:p-8"
           style={{
@@ -511,8 +522,8 @@ export default function DreamDetailsPage() {
             className="mt-2 text-sm"
             style={{ color: muted }}
           >
-            Write down progress, thoughts, signs, little wins or anything
-            you want to remember along the way.
+            Write down progress, thoughts, signs, little wins or
+            anything you want to remember along the way.
           </p>
 
           <textarea
@@ -553,14 +564,13 @@ export default function DreamDetailsPage() {
                   className="text-xs"
                   style={{ color: muted }}
                 >
-                  {new Date(update.createdAt).toLocaleDateString(
-                    "en-US",
-                    {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    },
-                  )}
+                  {new Date(
+                    update.createdAt,
+                  ).toLocaleDateString("en-US", {
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
                 </p>
 
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-7">
@@ -580,7 +590,7 @@ export default function DreamDetailsPage() {
           </div>
         </section>
 
-        {/* Manifestation */}
+        {/* Manifest your dream */}
         {dream.status !== "manifested" && (
           <section
             className="mt-8 rounded-2xl p-7 text-center"
@@ -621,6 +631,7 @@ export default function DreamDetailsPage() {
           </section>
         )}
 
+        {/* Already manifested */}
         {dream.status === "manifested" && (
           <section
             className="mt-8 rounded-2xl p-8 text-center"
@@ -644,7 +655,7 @@ export default function DreamDetailsPage() {
           </section>
         )}
 
-        {/* Saving + error */}
+        {/* Save state */}
         {saving && (
           <p
             className="mt-4 text-center text-xs"
@@ -666,5 +677,25 @@ export default function DreamDetailsPage() {
         <div className="pb-10" />
       </div>
     </main>
+  );
+}
+
+export default function DreamDetailsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="min-h-screen flex items-center justify-center"
+          style={{
+            background: "#FFFCF8",
+            color: "#958477",
+          }}
+        >
+          Loading your dream...
+        </div>
+      }
+    >
+      <DreamDetailsContent />
+    </Suspense>
   );
 }
