@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import Link from "next/link";
+import { BookOpen } from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   House,
@@ -22,6 +23,11 @@ const navigation = [
   { label: "It came true", href: "/it-came-true", icon: Camera },
   { label: "Affirmations", href: "/affirmations", icon: Heart },
   { label: "Manifestations",href: "/manifestations",icon: Sparkles},
+  {
+  label: "Journal",
+  href: "/journal",
+  icon: BookOpen,
+},
 ];
 
 export default function Sidebar() {
