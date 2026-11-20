@@ -48,8 +48,12 @@ export default function JournalPage() {
   const [gratitude, setGratitude] = useState("");
   const [mood, setMood] = useState("");
   const [prompt, setPrompt] = useState("");
-
-  const dailyPrompt = getDailyPrompt();
+  const [todayDate, setTodayDate] = useState("");
+  const [dailyPrompt, setDailyPrompt] = useState<string>("");
+useEffect(() => {
+  setDailyPrompt(getDailyPrompt());
+  setTodayDate(new Date().toISOString());
+}, []);
 
   useEffect(() => {
     loadEntries();
@@ -214,7 +218,7 @@ export default function JournalPage() {
 
               {selectedId
                 ? "Editing a memory"
-                : formatDate(new Date().toISOString())}
+                : todayDate? formatDate(todayDate): ""}
             </div>
 
             {/* Daily prompt */}
