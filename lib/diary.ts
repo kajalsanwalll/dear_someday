@@ -1,5 +1,5 @@
 
-import { supabase } from "@/lib/supabase";
+import { supabase } from "./supabase/client";
 
 export type DiaryPhoto = {
   id: string;
@@ -29,7 +29,6 @@ async function getUserId() {
   return data.user.id;
 }
 
-// Convert a Base64 data URL into a Blob
 function dataUrlToBlob(dataUrl: string) {
   const [header, base64] = dataUrl.split(",");
   const mime = header.match(/:(.*?);/)?.[1] || "image/jpeg";
@@ -44,14 +43,12 @@ function dataUrlToBlob(dataUrl: string) {
   return new Blob([bytes], { type: mime });
 }
 
-// Upload a photo and return its private storage path
 export async function uploadDiaryPhoto(
   date: string,
   photo: DiaryPhoto
 ): Promise<DiaryPhoto> {
   const userId = await getUserId();
 
-  // Already uploaded
   if (photo.storagePath) {
     return photo;
   }
@@ -75,12 +72,11 @@ export async function uploadDiaryPhoto(
   return {
     id: photo.id,
     caption: photo.caption,
-    src: "",
+    src: photo.src,
     storagePath: path,
   };
 }
 
-// Create a temporary signed URL for a private photo
 async function getPhotoUrl(path: string) {
   const { data, error } = await supabase.storage
     .from(BUCKET)
@@ -91,7 +87,6 @@ async function getPhotoUrl(path: string) {
   return data.signedUrl;
 }
 
-// Return diary photos with usable URLs
 async function hydratePhotos(
   photos: DiaryPhoto[]
 ): Promise<DiaryPhoto[]> {
@@ -107,7 +102,6 @@ async function hydratePhotos(
   );
 }
 
-// Fetch all diary entries
 export async function getDiaryEntries(): Promise<DiaryEntry[]> {
   const userId = await getUserId();
 
@@ -115,24 +109,23 @@ export async function getDiaryEntries(): Promise<DiaryEntry[]> {
     .from("diary_entries")
     .select("*")
     .eq("user_id", userId)
-    .order("date", { ascending: false });
+    .order("entry_date", { ascending: false });
 
   if (error) throw error;
 
   return Promise.all(
     (data || []).map(async (row) => ({
-      date: row.date,
+      date: row.entry_date,
       title: row.title || "",
       manifestation: row.manifestation || "",
       gratitude: row.gratitude || "",
       feelings: row.feelings || "",
       photos: await hydratePhotos(row.photos || []),
-      savedAt: row.saved_at || row.created_at,
+      savedAt: row.updated_at || row.created_at,
     }))
   );
 }
 
-// Fetch a diary entry for one date
 export async function getDiaryEntry(
   date: string
 ): Promise<DiaryEntry | null> {
@@ -142,57 +135,65 @@ export async function getDiaryEntry(
     .from("diary_entries")
     .select("*")
     .eq("user_id", userId)
-    .eq("date", date)
+    .eq("entry_date", date)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return null;
 
   return {
-    date: data.date,
+    date: data.entry_date,
     title: data.title || "",
     manifestation: data.manifestation || "",
     gratitude: data.gratitude || "",
     feelings: data.feelings || "",
     photos: await hydratePhotos(data.photos || []),
-    savedAt: data.saved_at || data.created_at,
+    savedAt: data.updated_at || data.created_at,
   };
 }
 
-// Save or update a diary entry
 export async function saveDiaryEntry(
   entry: DiaryEntry
 ): Promise<void> {
   const userId = await getUserId();
 
-  const photos = await Promise.all(
-    entry.photos.map((photo) => uploadDiaryPhoto(entry.date, photo))
+  const uploadedPhotos = await Promise.all(
+    entry.photos.map((photo) =>
+      uploadDiaryPhoto(entry.date, photo)
+    )
   );
+
+  const storedPhotos = uploadedPhotos.map((photo) => ({
+    id: photo.id,
+    caption: photo.caption,
+    src: "",
+    storagePath: photo.storagePath,
+  }));
 
   const { error } = await supabase
     .from("diary_entries")
     .upsert(
       {
         user_id: userId,
-        date: entry.date,
+        entry_date: entry.date,
         title: entry.title,
         manifestation: entry.manifestation,
         gratitude: entry.gratitude,
         feelings: entry.feelings,
-        photos,
-        saved_at: entry.savedAt,
+        photos: storedPhotos,
         updated_at: new Date().toISOString(),
       },
       {
-        onConflict: "user_id,date",
+        onConflict: "user_id,entry_date",
       }
     );
 
   if (error) throw error;
 }
 
-// Delete a diary entry and its photos
-export async function deleteDiaryEntry(date: string): Promise<void> {
+export async function deleteDiaryEntry(
+  date: string
+): Promise<void> {
   const userId = await getUserId();
 
   const existing = await getDiaryEntry(date);
@@ -214,7 +215,7 @@ export async function deleteDiaryEntry(date: string): Promise<void> {
     .from("diary_entries")
     .delete()
     .eq("user_id", userId)
-    .eq("date", date);
+    .eq("entry_date", date);
 
   if (error) throw error;
 }
