@@ -23,6 +23,7 @@ const navigation = [
   { label: "It came true", href: "/it-came-true", icon: Camera },
   { label: "Affirmations", href: "/affirmations", icon: Heart },
   {label: "Journal",href: "/journal",icon: BookOpen,},
+  
 ];
 
 export default function Sidebar() {

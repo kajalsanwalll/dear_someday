@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -12,7 +13,6 @@ import {
   X,
   Feather,
 } from "lucide-react";
-
 import {
   getAffirmations,
   createAffirmation,
@@ -82,41 +82,51 @@ const dailyAffirmations = [
   "The universe is not against me. Life is happening for me.",
 ];
 
-function getTodayKey() {
-  const now = new Date();
-
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
+function getTodayKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
-function getDailyAffirmation() {
-  const date = new Date();
+function getDailyAffirmation(date: Date) {
   const startOfYear = new Date(date.getFullYear(), 0, 0);
 
   const dayOfYear = Math.floor(
-    (date.getTime() - startOfYear.getTime()) / 86400000,
+    (date.getTime() - startOfYear.getTime()) / 86400000
   );
 
-  return dailyAffirmations[dayOfYear % dailyAffirmations.length];
+  return dailyAffirmations[
+    dayOfYear % dailyAffirmations.length
+  ];
 }
 
 export default function AffirmationsPage() {
   const [affirmations, setAffirmations] = useState<Affirmation[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [today, setToday] = useState("");
+  const [dailyAffirmation, setDailyAffirmation] = useState(
+    dailyAffirmations[0]
+  );
+
   const [activeCategory, setActiveCategory] = useState("All");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [search, setSearch] = useState("");
+
   const [showForm, setShowForm] = useState(false);
   const [newContent, setNewContent] = useState("");
   const [newCategory, setNewCategory] = useState("Self-love");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const today = getTodayKey();
-  const dailyAffirmation = getDailyAffirmation();
+  useEffect(() => {
+    const now = new Date();
+
+    setToday(getTodayKey(now));
+    setDailyAffirmation(getDailyAffirmation(now));
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -133,14 +143,6 @@ export default function AffirmationsPage() {
 
     load();
   }, []);
-
-  const practicedToday = affirmations.filter((item) =>
-    item.practiced_dates?.includes(today),
-  ).length;
-
-  const favoriteCount = affirmations.filter(
-    (item) => item.is_favorite,
-  ).length;
 
   const filteredAffirmations = useMemo(() => {
     return affirmations.filter((item) => {
@@ -190,7 +192,7 @@ export default function AffirmationsPage() {
       });
 
       setAffirmations((prev) =>
-        prev.map((a) => (a.id === item.id ? updated : a)),
+        prev.map((a) => (a.id === item.id ? updated : a))
       );
     } catch (err) {
       console.error(err);
@@ -199,6 +201,8 @@ export default function AffirmationsPage() {
   }
 
   async function togglePracticed(item: Affirmation) {
+    if (!today) return;
+
     const dates = item.practiced_dates || [];
 
     const updatedDates = dates.includes(today)
@@ -211,26 +215,28 @@ export default function AffirmationsPage() {
       });
 
       setAffirmations((prev) =>
-        prev.map((a) => (a.id === item.id ? updated : a)),
+        prev.map((a) => (a.id === item.id ? updated : a))
       );
     } catch (err) {
       console.error(err);
-      setError("Couldn't update today's practice.");
+      setError("Couldn't update your practice.");
     }
   }
 
   async function handleDelete(item: Affirmation) {
-    const confirmed = window.confirm(
-      "Delete this affirmation? This cannot be undone.",
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Delete this affirmation? This cannot be undone."
+      )
+    ) {
+      return;
+    }
 
     try {
       await deleteAffirmation(item.id);
 
       setAffirmations((prev) =>
-        prev.filter((a) => a.id !== item.id),
+        prev.filter((a) => a.id !== item.id)
       );
     } catch (err) {
       console.error(err);
@@ -240,12 +246,13 @@ export default function AffirmationsPage() {
 
   return (
     <main
-      className="min-h-screen px-5 py-8 md:px-10"
+      className="min-h-screen px-5 py-10 md:px-10"
       style={{ background: cream, color: brown }}
     >
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-3xl">
+
         {/* Header */}
-        <header className="mb-10">
+        <header className="mb-12">
           <p
             className="text-xs uppercase tracking-[0.22em]"
             style={{ color: muted }}
@@ -260,159 +267,86 @@ export default function AffirmationsPage() {
             Affirmations
           </h1>
 
-          <p
-            className="mt-3 max-w-xl text-sm leading-7"
-            style={{ color: muted }}
-          >
-            Words you choose to believe. Gentle reminders of who
-            you are, what you deserve, and the life you're creating.
+          <p className="mt-3 text-sm" style={{ color: muted }}>
+            Gentle words. A kinder inner voice.
           </p>
         </header>
 
         {/* Daily affirmation */}
         <section
-          className="relative overflow-hidden rounded-[28px] p-7 md:p-11"
+          className="rounded-[28px] px-7 py-10 text-center md:px-12 md:py-14"
           style={{
             background: "#EDE3D9",
             border: `1px solid ${border}`,
           }}
         >
-          <div className="absolute right-5 top-5 opacity-20 md:right-10 md:top-8">
-            <Sparkles size={65} />
-          </div>
-
-          <div className="flex items-center gap-2 text-sm">
-            <Sun size={17} />
-            <span className="tracking-wide">YOUR DAILY AFFIRMATION</span>
-          </div>
+          <Sparkles
+            size={20}
+            className="mx-auto mb-5"
+            style={{ color: muted }}
+          />
 
           <p
-            className="mt-7 max-w-3xl text-2xl leading-relaxed md:text-4xl md:leading-relaxed"
-            style={{ fontFamily: "var(--font-gloock)" }}
+            className="text-xs uppercase tracking-[0.2em]"
+            style={{ color: muted }}
           >
-            "{dailyAffirmation}"
+            Today's reminder
           </p>
 
-          <p className="mt-5 text-sm" style={{ color: muted }}>
-            Take a deep breath. Read it slowly. Let it sink in.
+          <p
+            className="mx-auto mt-6 max-w-2xl text-2xl leading-relaxed md:text-3xl"
+            style={{ fontFamily: "var(--font-gloock)" }}
+          >
+            {dailyAffirmation}
           </p>
 
           <button
             onClick={() =>
               navigator.clipboard.writeText(dailyAffirmation)
             }
-            className="mt-6 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm transition hover:opacity-80"
+            className="mt-7 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm transition hover:opacity-80"
             style={{ background: brown, color: cream }}
           >
             <Feather size={15} />
-            Carry this with me
+            Keep this close
           </button>
         </section>
 
-        {/* Stats */}
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div
-            className="rounded-2xl border p-5"
-            style={{ background: "#fff", borderColor: border }}
-          >
-            <div className="flex items-center gap-2">
-              <Sun size={17} style={{ color: muted }} />
-              <p className="text-sm" style={{ color: muted }}>
-                Practiced today
-              </p>
-            </div>
-
-            <p
-              className="mt-3 text-3xl"
-              style={{ fontFamily: "var(--font-gloock)" }}
-            >
-              {practicedToday}
-            </p>
-          </div>
-
-          <div
-            className="rounded-2xl border p-5"
-            style={{ background: "#fff", borderColor: border }}
-          >
-            <div className="flex items-center gap-2">
-              <Heart size={17} style={{ color: muted }} />
-              <p className="text-sm" style={{ color: muted }}>
-                Favorites
-              </p>
-            </div>
-
-            <p
-              className="mt-3 text-3xl"
-              style={{ fontFamily: "var(--font-gloock)" }}
-            >
-              {favoriteCount}
-            </p>
-          </div>
-
-          <div
-            className="rounded-2xl border p-5"
-            style={{ background: "#fff", borderColor: border }}
-          >
-            <div className="flex items-center gap-2">
-              <Sparkles size={17} style={{ color: muted }} />
-              <p className="text-sm" style={{ color: muted }}>
-                My collection
-              </p>
-            </div>
-
-            <p
-              className="mt-3 text-3xl"
-              style={{ fontFamily: "var(--font-gloock)" }}
-            >
-              {affirmations.length}
-            </p>
-          </div>
-        </div>
-
-        {/* Collection header */}
+        {/* Collection */}
         <section className="mt-12">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2
-                className="text-2xl md:text-3xl"
-                style={{ fontFamily: "var(--font-gloock)" }}
-              >
-                My little collection
-              </h2>
 
-              <p className="mt-2 text-sm" style={{ color: muted }}>
-                Keep the words that feel like they were meant for you.
-              </p>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <h2
+              className="text-2xl"
+              style={{ fontFamily: "var(--font-gloock)" }}
+            >
+              Words for me
+            </h2>
 
             <button
               onClick={() => setShowForm(!showForm)}
-              className="flex items-center gap-2 rounded-full px-5 py-3 text-sm transition hover:opacity-80"
-              style={{ background: brown, color: cream }}
+              className="flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm"
+              style={{
+                borderColor: border,
+                background: showForm ? "#EDE3D9" : "transparent",
+              }}
             >
-              {showForm ? <X size={16} /> : <Plus size={16} />}
-              {showForm ? "Close" : "Write an affirmation"}
+              {showForm ? <X size={15} /> : <Plus size={15} />}
+              {showForm ? "Close" : "Add"}
             </button>
           </div>
 
-          {/* Create form */}
+          {/* Add affirmation */}
           {showForm && (
             <div
-              className="mt-6 rounded-2xl border p-5 md:p-7"
+              className="mt-5 rounded-2xl border p-5"
               style={{ background: "#F5EEE7", borderColor: border }}
             >
-              <p
-                className="mb-4 text-xl"
-                style={{ fontFamily: "var(--font-gloock)" }}
-              >
-                A little reminder for myself...
-              </p>
-
               <textarea
                 value={newContent}
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="I am worthy of every beautiful thing coming my way..."
-                rows={4}
+                rows={3}
                 className="w-full resize-none rounded-xl border p-4 text-sm leading-7 outline-none"
                 style={{
                   background: cream,
@@ -421,11 +355,11 @@ export default function AffirmationsPage() {
                 }}
               />
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-3 flex flex-wrap justify-between gap-3">
                 <select
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  className="rounded-xl border px-4 py-3 text-sm outline-none"
+                  className="rounded-xl border px-3 py-2 text-sm"
                   style={{
                     background: cream,
                     color: brown,
@@ -433,7 +367,7 @@ export default function AffirmationsPage() {
                   }}
                 >
                   {categories
-                    .filter((category) => category !== "All")
+                    .filter((c) => c !== "All")
                     .map((category) => (
                       <option key={category} value={category}>
                         {categoryEmojis[category]} {category}
@@ -444,10 +378,10 @@ export default function AffirmationsPage() {
                 <button
                   onClick={handleCreate}
                   disabled={!newContent.trim() || saving}
-                  className="rounded-full px-5 py-3 text-sm disabled:opacity-40"
+                  className="rounded-full px-5 py-2.5 text-sm disabled:opacity-40"
                   style={{ background: brown, color: cream }}
                 >
-                  {saving ? "Saving..." : "Save to my collection"}
+                  {saving ? "Saving..." : "Save"}
                 </button>
               </div>
             </div>
@@ -458,25 +392,25 @@ export default function AffirmationsPage() {
             className="mt-6 flex items-center gap-3 rounded-xl border px-4 py-3"
             style={{ background: "#fff", borderColor: border }}
           >
-            <Search size={17} style={{ color: muted }} />
+            <Search size={16} style={{ color: muted }} />
 
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Find an affirmation..."
+              placeholder="Find a little reminder..."
               className="w-full bg-transparent text-sm outline-none"
               style={{ color: brown }}
             />
 
             {search && (
               <button onClick={() => setSearch("")}>
-                <X size={16} style={{ color: muted }} />
+                <X size={15} style={{ color: muted }} />
               </button>
             )}
           </div>
 
           {/* Filters */}
-          <div className="mt-5 flex gap-2 overflow-x-auto pb-2">
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
             {categories.map((category) => (
               <button
                 key={category}
@@ -484,7 +418,7 @@ export default function AffirmationsPage() {
                   setActiveCategory(category);
                   setFavoritesOnly(false);
                 }}
-                className="shrink-0 rounded-full border px-4 py-2 text-sm transition"
+                className="shrink-0 rounded-full border px-3.5 py-2 text-xs transition"
                 style={{
                   background:
                     activeCategory === category && !favoritesOnly
@@ -504,170 +438,133 @@ export default function AffirmationsPage() {
 
             <button
               onClick={() => setFavoritesOnly(!favoritesOnly)}
-              className="shrink-0 rounded-full border px-4 py-2 text-sm"
+              className="shrink-0 rounded-full border px-3.5 py-2 text-xs"
               style={{
                 background: favoritesOnly ? "#B07C78" : "#fff",
                 color: favoritesOnly ? "#fff" : muted,
                 borderColor: border,
               }}
             >
-              <span className="inline-flex items-center gap-1.5">
-                <Heart size={14} />
-                Favorites
-              </span>
+              ♡ Favorites
             </button>
           </div>
 
-          {/* Cards */}
-          {loading ? (
-            <div className="py-20 text-center">
-              <Sparkles
-                size={22}
-                className="mx-auto animate-pulse"
+          {/* List */}
+          <div className="mt-5">
+            {loading ? (
+              <p
+                className="py-12 text-center text-sm"
                 style={{ color: muted }}
-              />
-              <p className="mt-3 text-sm" style={{ color: muted }}>
-                Gathering your little reminders...
-              </p>
-            </div>
-          ) : filteredAffirmations.length === 0 ? (
-            <div
-              className="mt-5 rounded-2xl border border-dashed p-12 text-center"
-              style={{ borderColor: border }}
-            >
-              <span className="text-3xl">🌷</span>
-
-              <h3
-                className="mt-4 text-xl"
-                style={{ fontFamily: "var(--font-gloock)" }}
               >
-                Nothing here just yet
-              </h3>
-
-              <p className="mt-2 text-sm" style={{ color: muted }}>
-                Write your first affirmation and let it live here.
+                Gathering your words...
               </p>
+            ) : filteredAffirmations.length === 0 ? (
+              <div className="py-14 text-center">
+                <span className="text-2xl">🌷</span>
 
-              <button
-                onClick={() => {
-                  setShowForm(true);
-                  setFavoritesOnly(false);
-                  setActiveCategory("All");
-                }}
-                className="mt-5 text-sm underline underline-offset-4"
-                style={{ color: brown }}
-              >
-                Create my first affirmation
-              </button>
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredAffirmations.map((item) => {
-                const practiced = item.practiced_dates?.includes(today);
+                <p
+                  className="mt-3"
+                  style={{ fontFamily: "var(--font-gloock)" }}
+                >
+                  Your words will live here
+                </p>
 
-                return (
-                  <article
-                    key={item.id}
-                    className="group flex flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5"
-                    style={{
-                      background: "#fff",
-                      borderColor: border,
-                    }}
-                  >
-                    <div className="flex items-start justify-between">
-                      <span
-                        className="rounded-full px-3 py-1 text-xs"
-                        style={{
-                          background: "#F5EEE7",
-                          color: muted,
-                        }}
-                      >
-                        {categoryEmojis[item.category] || "✨"}{" "}
-                        {item.category}
-                      </span>
+                <p className="mt-2 text-sm" style={{ color: muted }}>
+                  Add something you want to remind yourself of.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y" style={{ borderColor: border }}>
+                {filteredAffirmations.map((item) => {
+                  const practiced =
+                    item.practiced_dates?.includes(today);
 
-                      <button
-                        onClick={() => toggleFavorite(item)}
-                        aria-label="Toggle favorite"
-                        className="rounded-full p-1.5 transition hover:scale-110"
-                      >
-                        <Heart
-                          size={18}
-                          fill={item.is_favorite ? "#B07C78" : "none"}
-                          style={{
-                            color: item.is_favorite
-                              ? "#B07C78"
-                              : border,
-                          }}
-                        />
-                      </button>
-                    </div>
-
-                    <p
-                      className="my-6 flex-1 text-lg leading-8"
-                      style={{ fontFamily: "var(--font-gloock)" }}
+                  return (
+                    <article
+                      key={item.id}
+                      className="py-5"
                     >
-                      "{item.content}"
-                    </p>
+                      <div className="flex items-start gap-4">
+                        <p
+                          className="flex-1 text-lg leading-8"
+                          style={{ fontFamily: "var(--font-gloock)" }}
+                        >
+                          {item.content}
+                        </p>
 
-                    <div
-                      className="flex items-center justify-between border-t pt-4"
-                      style={{ borderColor: "#F0E9E2" }}
-                    >
-                      <button
-                        onClick={() => togglePracticed(item)}
-                        className="flex items-center gap-2 rounded-full px-3 py-2 text-xs transition"
-                        style={{
-                          background: practiced ? "#E8E0D7" : "#F8F4EF",
-                          color: brown,
-                        }}
-                      >
-                        {practiced ? (
-                          <Check size={14} />
-                        ) : (
-                          <Sun size={14} />
-                        )}
+                        <button
+                          onClick={() => toggleFavorite(item)}
+                          aria-label="Toggle favorite"
+                          className="shrink-0 pt-1"
+                        >
+                          <Heart
+                            size={18}
+                            fill={
+                              item.is_favorite
+                                ? "#B07C78"
+                                : "transparent"
+                            }
+                            style={{
+                              color: item.is_favorite
+                                ? "#B07C78"
+                                : muted,
+                            }}
+                          />
+                        </button>
+                      </div>
 
-                        {practiced ? "Practiced today" : "I repeated this"}
-                      </button>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <span
+                          className="text-xs"
+                          style={{ color: muted }}
+                        >
+                          {categoryEmojis[item.category] || "✨"}{" "}
+                          {item.category}
+                        </span>
 
-                      <button
-                        onClick={() => handleDelete(item)}
-                        aria-label="Delete affirmation"
-                        className="rounded-full p-2 opacity-50 transition hover:opacity-100"
-                        style={{ color: muted }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => togglePracticed(item)}
+                            className="flex items-center gap-1.5 text-xs"
+                            style={{ color: muted }}
+                          >
+                            {practiced ? (
+                              <Check size={14} />
+                            ) : (
+                              <Sun size={14} />
+                            )}
+                            {practiced ? "Today" : "Repeat"}
+                          </button>
+
+                          <button
+                            onClick={() => handleDelete(item)}
+                            aria-label="Delete affirmation"
+                            style={{ color: muted }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
 
-        {/* Closing note */}
-        <div className="mt-12 pb-10 text-center">
-          <Heart
-            size={18}
-            className="mx-auto"
-            style={{ color: "#B07C78" }}
-          />
-
-          <p
-            className="mt-3 text-lg"
-            style={{ fontFamily: "var(--font-gloock)", color: muted }}
-          >
-            Speak to yourself like someone you love.
-          </p>
-        </div>
+        <p
+          className="mt-10 pb-8 text-center text-sm"
+          style={{
+            color: muted,
+            fontFamily: "var(--font-gloock)",
+          }}
+        >
+          Speak to yourself like someone you love. ♡
+        </p>
 
         {error && (
-          <p
-            className="mt-5 text-center text-sm"
-            style={{ color: "#B65F55" }}
-          >
+          <p className="mt-4 text-center text-sm text-red-500">
             {error}
           </p>
         )}
