@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import Link from "next/link";
 
@@ -13,23 +13,12 @@ import {
   X,
 } from "lucide-react";
 
-type DiaryPhoto = {
-  id: string;
-  src: string;
-  caption: string;
-};
-
-type DiaryEntry = {
-  date: string;
-  title: string;
-  manifestation: string;
-  gratitude: string;
-  feelings: string;
-  photos: DiaryPhoto[];
-  savedAt: string;
-};
-
-const STORAGE_KEY = "dear-someday-diary";
+import {
+  getDiaryEntry,
+  saveDiaryEntry,
+  type DiaryEntry,
+  type DiaryPhoto,
+} from "@/lib/diary";
 
 // Get today's date in YYYY-MM-DD format
 function getToday() {
@@ -42,19 +31,22 @@ function getToday() {
   return `${year}-${month}-${day}`;
 }
 
-// Format the selected date nicely
+// Format selected date
 function getFormattedDate(date: string) {
   if (!date) return "";
 
-  return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return new Date(`${date}T12:00:00`).toLocaleDateString(
+    "en-US",
+    {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
 }
 
-// Compress photos before saving them
+// Compress photos before uploading
 async function compressImage(file: File): Promise<string> {
   const image = await createImageBitmap(file);
 
@@ -74,10 +66,16 @@ async function compressImage(file: File): Promise<string> {
     const context = canvas.getContext("2d");
 
     if (!context) {
-      throw new Error("Could not process image");
+      throw new Error("Could not process image.");
     }
 
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    context.drawImage(
+      image,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
 
     return canvas.toDataURL("image/jpeg", 0.8);
   } finally {
@@ -99,49 +97,87 @@ export default function DiaryEditor({
   const [photos, setPhotos] = useState<DiaryPhoto[]>([]);
 
   const [loaded, setLoaded] = useState(false);
-  const [saveStatus, setSaveStatus] = useState("");
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
 
-  // Initialize today's date on the client
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+
+  const loadVersion = useRef(0);
+  const saving = useRef(false);
+  const pendingSave = useRef(false);
+  const saveEntryRef = useRef<() => Promise<void>>(async () => {});
+
+  // Initialize date
   useEffect(() => {
     if (!initialDate) {
       setDate(getToday());
     }
   }, [initialDate]);
 
-  // Load saved entry for selected date
+  // Load diary entry from Supabase
   useEffect(() => {
     if (!date) return;
 
+    const version = ++loadVersion.current;
+    let cancelled = false;
+
     setLoaded(false);
+    setLoading(true);
+    setSaveStatus("");
 
-    const entries: DiaryEntry[] = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "[]"
-    );
+    async function loadEntry() {
+      try {
+        const entry = await getDiaryEntry(date);
 
-    const existing = entries.find((entry) => entry.date === date);
+        if (cancelled || version !== loadVersion.current) {
+          return;
+        }
 
-    if (existing) {
-      setTitle(existing.title || "");
-      setManifestation(existing.manifestation || "");
-      setGratitude(existing.gratitude || "");
-      setFeelings(existing.feelings || "");
-      setPhotos(existing.photos || []);
-    } else {
-      setTitle("");
-      setManifestation("");
-      setGratitude("");
-      setFeelings("");
-      setPhotos([]);
+        setTitle(entry?.title || "");
+        setManifestation(entry?.manifestation || "");
+        setGratitude(entry?.gratitude || "");
+        setFeelings(entry?.feelings || "");
+        setPhotos(entry?.photos || []);
+
+        setLoaded(true);
+      } catch (error) {
+        console.error("Diary loading error:", error);
+
+        if (!cancelled && version === loadVersion.current) {
+          setSaveStatus(
+            error instanceof Error
+              ? error.message
+              : "Couldn't load your diary entry."
+          );
+        }
+      } finally {
+        if (!cancelled && version === loadVersion.current) {
+          setLoading(false);
+        }
+      }
     }
 
-    setSaveStatus("");
-    setLoaded(true);
+    loadEntry();
+
+    return () => {
+      cancelled = true;
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
+    };
   }, [date]);
 
-  // Autosave diary entry
-  useEffect(() => {
+  // Save diary entry to Supabase
+  const saveEntry = useCallback(async () => {
     if (!loaded || !date) return;
+
+    if (saving.current) {
+      pendingSave.current = true;
+      return;
+    }
 
     const isEmpty =
       !title.trim() &&
@@ -155,46 +191,40 @@ export default function DiaryEditor({
       return;
     }
 
-    const timeout = setTimeout(() => {
-      const entries: DiaryEntry[] = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) || "[]"
+    saving.current = true;
+    setSaveStatus("Saving your memories ♡");
+
+    const entry: DiaryEntry = {
+      date,
+      title,
+      manifestation,
+      gratitude,
+      feelings,
+      photos,
+      savedAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveDiaryEntry(entry);
+      setSaveStatus("Saved gently ♡");
+    } catch (error) {
+      console.error("Diary saving error:", error);
+
+      setSaveStatus(
+        error instanceof Error
+          ? error.message
+          : "Couldn't save your entry. Please try again ♡"
       );
+    } finally {
+      saving.current = false;
 
-      const entry: DiaryEntry = {
-        date,
-        title,
-        manifestation,
-        gratitude,
-        feelings,
-        photos,
-        savedAt: new Date().toISOString(),
-      };
-
-      const index = entries.findIndex(
-        (item) => item.date === date
-      );
-
-      if (index !== -1) {
-        entries[index] = entry;
-      } else {
-        entries.unshift(entry);
+      if (pendingSave.current) {
+        pendingSave.current = false;
+        saveTimer.current = setTimeout(() => {
+          void saveEntryRef.current();
+        }, 300);
       }
-
-      try {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify(entries)
-        );
-
-        setSaveStatus("Saved gently ♡");
-      } catch {
-        setSaveStatus(
-          "A little too much to save — try removing a photo ♡"
-        );
-      }
-    }, 700);
-
-    return () => clearTimeout(timeout);
+    }
   }, [
     date,
     title,
@@ -205,7 +235,40 @@ export default function DiaryEditor({
     loaded,
   ]);
 
-  // Upload and compress photos
+  useEffect(() => {
+    saveEntryRef.current = saveEntry;
+  }, [saveEntry]);
+
+  // Autosave when content changes
+  useEffect(() => {
+    if (!loaded || loading || !date) return;
+
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+    }
+
+    saveTimer.current = setTimeout(() => {
+      saveEntry();
+    }, 900);
+
+    return () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
+    };
+  }, [
+    title,
+    manifestation,
+    gratitude,
+    feelings,
+    photos,
+    date,
+    loaded,
+    loading,
+    saveEntry,
+  ]);
+
+  // Upload photographs
   async function handlePhotoUpload(
     event: ChangeEvent<HTMLInputElement>
   ) {
@@ -214,6 +277,7 @@ export default function DiaryEditor({
     if (!files.length) return;
 
     setUploading(true);
+    setSaveStatus("Tucking your photos in...");
 
     try {
       const uploadedPhotos = await Promise.all(
@@ -228,19 +292,17 @@ export default function DiaryEditor({
         ...previous,
         ...uploadedPhotos,
       ]);
+    } catch (error) {
+      console.error("Photo upload error:", error);
 
-      setSaveStatus("Adding your memories ♡");
-    } catch {
-      setSaveStatus(
-        "Couldn't add that photo. Try another ♡"
-      );
+      setSaveStatus("Couldn't add that photo. Try another ♡");
     } finally {
       setUploading(false);
       event.target.value = "";
     }
   }
 
-  // Edit photo caption
+  // Update photo caption
   function updateCaption(id: string, caption: string) {
     setPhotos((previous) =>
       previous.map((photo) =>
@@ -251,7 +313,7 @@ export default function DiaryEditor({
     );
   }
 
-  // Remove photo
+  // Remove photo from entry
   function removePhoto(id: string) {
     setPhotos((previous) =>
       previous.filter((photo) => photo.id !== id)
@@ -284,6 +346,13 @@ export default function DiaryEditor({
         </p>
       </div>
 
+      {/* Loading */}
+      {loading && (
+        <p className="mb-6 text-sm text-[#958477]">
+          Opening your little memories... ♡
+        </p>
+      )}
+
       {/* Intro */}
       <div className="mb-10">
         <h1 className="font-heading text-5xl leading-tight text-[#493C38] md:text-6xl">
@@ -298,7 +367,9 @@ export default function DiaryEditor({
 
       {/* Scrapbook paper */}
       <div
-        className="space-y-9 rounded-sm border border-[#e8dfd4] p-6 shadow-sm md:p-10"
+        className={`space-y-9 rounded-sm border border-[#e8dfd4] p-6 shadow-sm md:p-10 ${
+          loading ? "opacity-60" : ""
+        }`}
         style={{
           backgroundColor: "#FFFCF8",
           backgroundImage:
@@ -315,6 +386,7 @@ export default function DiaryEditor({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            disabled={!loaded}
             placeholder="A day worth remembering..."
             className="w-full border-b border-[#e8dfd4] bg-transparent pb-3 font-heading text-2xl text-[#493C38] outline-none placeholder:text-[#c8bdb1]"
           />
@@ -328,9 +400,8 @@ export default function DiaryEditor({
 
           <textarea
             value={manifestation}
-            onChange={(e) =>
-              setManifestation(e.target.value)
-            }
+            onChange={(e) => setManifestation(e.target.value)}
+            disabled={!loaded}
             placeholder="Write as if it is already yours... tell the universe everything."
             rows={7}
             className="w-full resize-none bg-transparent font-body text-[15px] leading-8 text-[#493C38] outline-none placeholder:text-[#c8bdb1]"
@@ -346,6 +417,7 @@ export default function DiaryEditor({
           <textarea
             value={gratitude}
             onChange={(e) => setGratitude(e.target.value)}
+            disabled={!loaded}
             placeholder="The things that made today beautiful, even the smallest ones..."
             rows={4}
             className="w-full resize-none bg-transparent font-body text-[15px] leading-8 text-[#493C38] outline-none placeholder:text-[#c8bdb1]"
@@ -361,6 +433,7 @@ export default function DiaryEditor({
           <textarea
             value={feelings}
             onChange={(e) => setFeelings(e.target.value)}
+            disabled={!loaded}
             placeholder="No judgement here. Just me, being honest..."
             rows={4}
             className="w-full resize-none bg-transparent font-body text-[15px] leading-8 text-[#493C38] outline-none placeholder:text-[#c8bdb1]"
@@ -370,7 +443,6 @@ export default function DiaryEditor({
         {/* Photos */}
         <div className="pt-2">
 
-          {/* Section heading */}
           <div className="mb-4 flex items-center justify-between">
             <label className="font-handwriting text-2xl text-[#C7A6A3]">
               Little pieces of today
@@ -382,7 +454,7 @@ export default function DiaryEditor({
             />
           </div>
 
-          {/* Uploaded photo grid */}
+          {/* Photo grid */}
           {photos.length > 0 && (
             <div className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
               {photos.map((photo, index) => (
@@ -394,7 +466,6 @@ export default function DiaryEditor({
                       : "rotate-[1.5deg]"
                   }`}
                 >
-                  {/* Remove photo */}
                   <button
                     type="button"
                     onClick={() => removePhoto(photo.id)}
@@ -404,20 +475,19 @@ export default function DiaryEditor({
                     <X size={14} />
                   </button>
 
-                  {/* Photo */}
                   <img
                     src={photo.src}
                     alt={photo.caption || "A diary memory"}
                     className="aspect-[4/5] w-full object-cover"
                   />
 
-                  {/* Caption */}
                   <input
                     value={photo.caption}
                     onChange={(e) =>
                       updateCaption(photo.id, e.target.value)
                     }
                     placeholder="Write a little caption..."
+                    disabled={!loaded}
                     className="mt-3 w-full bg-transparent text-center font-handwriting text-xl text-[#958477] outline-none placeholder:text-[#c8bdb1]"
                   />
                 </div>
@@ -425,8 +495,14 @@ export default function DiaryEditor({
             </div>
           )}
 
-          {/* Upload photos */}
-          <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#d9cbbd] bg-[#F5F0E8]/70 px-6 py-8 text-center transition hover:bg-[#F5F0E8]">
+          {/* Upload */}
+          <label
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#d9cbbd] bg-[#F5F0E8]/70 px-6 py-8 text-center transition hover:bg-[#F5F0E8] ${
+              uploading || !loaded
+                ? "pointer-events-none opacity-60"
+                : ""
+            }`}
+          >
             <ImagePlus
               size={22}
               className="mb-3 text-[#C7A6A3]"
@@ -448,7 +524,7 @@ export default function DiaryEditor({
               multiple
               onChange={handlePhotoUpload}
               className="hidden"
-              disabled={uploading}
+              disabled={uploading || !loaded}
             />
           </label>
         </div>
