@@ -1,7 +1,7 @@
 
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Sparkles,
@@ -77,6 +77,7 @@ export default function DreamsPage() {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const router = useRouter();
 
   const [showModal, setShowModal] = useState(false);
   const [editingDream, setEditingDream] = useState<Dream | null>(null);
@@ -618,6 +619,13 @@ export default function DreamsPage() {
                     </p>
                   )}
                 </div>
+                <button
+  onClick={() => router.push(`/dreams/${dream.id}`)}
+  className="mt-4 flex w-full items-center justify-between rounded-xl border border-[#D8CBBE] px-4 py-3 text-sm text-[#493C38] transition hover:bg-[#F0E8DF]"
+>
+  <span>Explore this dream</span>
+  <ArrowUpRight size={16} />
+</button>
               </div>
             );
           })}
