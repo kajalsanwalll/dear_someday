@@ -1,27 +1,43 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BookHeart, Plus } from "lucide-react";
-
-type DiaryEntry = {
-  date: string;
-  title: string;
-  manifestation: string;
-  gratitude: string;
-  feelings: string;
-  savedAt: string;
-};
-
-const STORAGE_KEY = "dear-someday-diary";
+import { getDiaryEntries, type DiaryEntry } from "@/lib/diary";
 
 export default function DiaryArchive() {
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    setEntries(stored ? JSON.parse(stored) : []);
+    let cancelled = false;
+
+    async function loadEntries() {
+      try {
+        const data = await getDiaryEntries();
+
+        if (!cancelled) {
+          setEntries(data);
+        }
+      } catch (err) {
+        console.error("Failed to load diary entries:", err);
+
+        if (!cancelled) {
+          setError("Couldn't load your diary entries. Please try again.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadEntries();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -47,8 +63,22 @@ export default function DiaryArchive() {
         </Link>
       </div>
 
+      {/* Loading */}
+      {loading && (
+        <p className="mt-16 text-center text-sm text-muted">
+          Gathering your little memories...
+        </p>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mt-10 rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+
       {/* Empty state */}
-      {entries.length === 0 && (
+      {!loading && !error && entries.length === 0 && (
         <div className="mt-16 rounded-2xl border border-dashed border-[#493c38]/20 bg-[#fffcf8]/60 px-6 py-16 text-center">
           <BookHeart
             size={30}
@@ -75,7 +105,7 @@ export default function DiaryArchive() {
       )}
 
       {/* Entries */}
-      {entries.length > 0 && (
+      {!loading && !error && entries.length > 0 && (
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {entries.map((entry) => (
             <Link
