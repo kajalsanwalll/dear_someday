@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+
 import {
   ArrowLeft,
   Check,
@@ -47,7 +48,9 @@ function DreamDetailsContent() {
 
   const [newStep, setNewStep] = useState("");
   const [newUpdate, setNewUpdate] = useState("");
+  const [justManifested, setJustManifested] = useState(false);
 
+  // Load dream
   useEffect(() => {
     async function loadDream() {
       try {
@@ -71,8 +74,11 @@ function DreamDetailsContent() {
     loadDream();
   }, [id]);
 
-  async function saveChanges(updates: Partial<Dream>) {
-    if (!dream) return;
+  // Save changes
+  async function saveChanges(
+    updates: Partial<Dream>,
+  ): Promise<boolean> {
+    if (!dream) return false;
 
     setSaving(true);
     setError("");
@@ -80,16 +86,19 @@ function DreamDetailsContent() {
     try {
       const updated = await updateDream(dream.id, updates);
       setDream(updated);
+      return true;
     } catch (err) {
       console.error(err);
       setError("Couldn't save your changes. Please try again.");
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
+  // Add a step
   async function addStep() {
-    if (!newStep.trim() || !dream) return;
+    if (!newStep.trim() || !dream || saving) return;
 
     const step: DreamStep = {
       id: crypto.randomUUID(),
@@ -97,17 +106,20 @@ function DreamDetailsContent() {
       completed: false,
     };
 
-    await saveChanges({
+    const success = await saveChanges({
       steps: [...(dream.steps || []), step],
     });
 
-    setNewStep("");
+    if (success) {
+      setNewStep("");
+    }
   }
 
+  // Toggle step completion
   async function toggleStep(stepId: string) {
-    if (!dream) return;
+    if (!dream || saving) return;
 
-    const updatedSteps = dream.steps.map((step) =>
+    const updatedSteps = (dream.steps || []).map((step) =>
       step.id === stepId
         ? { ...step, completed: !step.completed }
         : step,
@@ -131,6 +143,11 @@ function DreamDetailsContent() {
       dream.status === "dreaming"
     ) {
       nextStatus = "in_progress";
+    } else if (
+      completedCount === 0 &&
+      dream.status === "almost_there"
+    ) {
+      nextStatus = "in_progress";
     }
 
     await saveChanges({
@@ -139,16 +156,20 @@ function DreamDetailsContent() {
     });
   }
 
+  // Delete a step
   async function deleteStep(stepId: string) {
-    if (!dream) return;
+    if (!dream || saving) return;
 
     await saveChanges({
-      steps: dream.steps.filter((step) => step.id !== stepId),
+      steps: (dream.steps || []).filter(
+        (step) => step.id !== stepId,
+      ),
     });
   }
 
+  // Add journal update
   async function addUpdate() {
-    if (!newUpdate.trim() || !dream) return;
+    if (!newUpdate.trim() || !dream || saving) return;
 
     const update: DreamUpdate = {
       id: crypto.randomUUID(),
@@ -156,31 +177,42 @@ function DreamDetailsContent() {
       createdAt: new Date().toISOString(),
     };
 
-    await saveChanges({
+    const success = await saveChanges({
       updates: [update, ...(dream.updates || [])],
     });
 
-    setNewUpdate("");
+    if (success) {
+      setNewUpdate("");
+    }
   }
 
+  // Manifest dream
   async function markManifested() {
-    if (!dream) return;
+    if (!dream || saving) return;
+
+    const manifestedAt = new Date().toISOString();
 
     const manifestationUpdate: DreamUpdate = {
       id: crypto.randomUUID(),
       content: "✨ I manifested this dream. It is now my reality.",
-      createdAt: new Date().toISOString(),
+      createdAt: manifestedAt,
     };
 
-    await saveChanges({
+    const success = await saveChanges({
       status: "manifested",
+      manifested_at: manifestedAt,
       updates: [
         manifestationUpdate,
         ...(dream.updates || []),
       ],
     });
+
+    if (success) {
+      setJustManifested(true);
+    }
   }
 
+  // Progress
   const completedSteps =
     dream?.steps?.filter((step) => step.completed).length || 0;
 
@@ -191,6 +223,7 @@ function DreamDetailsContent() {
       ? Math.round((completedSteps / totalSteps) * 100)
       : 0;
 
+  // Loading
   if (loading) {
     return (
       <div
@@ -203,6 +236,7 @@ function DreamDetailsContent() {
     );
   }
 
+  // Not found
   if (!dream) {
     return (
       <div
@@ -257,10 +291,7 @@ function DreamDetailsContent() {
               {dream.category}
             </span>
 
-            <span
-              className="text-sm"
-              style={{ color: muted }}
-            >
+            <span className="text-sm" style={{ color: muted }}>
               {statusLabels[dream.status] || dream.status}
             </span>
           </div>
@@ -293,10 +324,7 @@ function DreamDetailsContent() {
               />
 
               <div>
-                <p
-                  className="text-sm font-medium"
-                  style={{ color: brown }}
-                >
+                <p className="text-sm font-medium" style={{ color: brown }}>
                   Why this dream matters to me
                 </p>
 
@@ -327,6 +355,25 @@ function DreamDetailsContent() {
               })}
             </div>
           )}
+
+          {dream.manifested_at && (
+            <div
+              className="mt-4 flex items-center gap-2 text-sm"
+              style={{ color: brown }}
+            >
+              <Sparkles size={16} />
+
+              Manifested on{" "}
+              {new Date(dream.manifested_at).toLocaleDateString(
+                "en-US",
+                {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                },
+              )}
+            </div>
+          )}
         </section>
 
         {/* Progress section */}
@@ -355,9 +402,7 @@ function DreamDetailsContent() {
 
             <span
               className="text-2xl"
-              style={{
-                fontFamily: "var(--font-gloock)",
-              }}
+              style={{ fontFamily: "var(--font-gloock)" }}
             >
               {progress}%
             </span>
@@ -396,14 +441,11 @@ function DreamDetailsContent() {
             </h2>
           </div>
 
-          <p
-            className="mt-2 text-sm"
-            style={{ color: muted }}
-          >
+          <p className="mt-2 text-sm" style={{ color: muted }}>
             Every little step is bringing you closer.
           </p>
 
-          {/* Add step input */}
+          {/* Add step */}
           <div className="mt-6 flex gap-2">
             <input
               value={newStep}
@@ -443,7 +485,8 @@ function DreamDetailsContent() {
               >
                 <button
                   onClick={() => toggleStep(step.id)}
-                  className="shrink-0"
+                  disabled={saving}
+                  className="shrink-0 disabled:opacity-50"
                   aria-label="Toggle step"
                 >
                   {step.completed ? (
@@ -457,18 +500,13 @@ function DreamDetailsContent() {
                       <Check size={13} />
                     </span>
                   ) : (
-                    <Circle
-                      size={19}
-                      style={{ color: border }}
-                    />
+                    <Circle size={19} style={{ color: border }} />
                   )}
                 </button>
 
                 <span
                   className={`flex-1 text-sm ${
-                    step.completed
-                      ? "line-through opacity-50"
-                      : ""
+                    step.completed ? "line-through opacity-50" : ""
                   }`}
                 >
                   {step.title}
@@ -476,7 +514,8 @@ function DreamDetailsContent() {
 
                 <button
                   onClick={() => deleteStep(step.id)}
-                  className="opacity-0 transition group-hover:opacity-100"
+                  disabled={saving}
+                  className="opacity-0 transition group-hover:opacity-100 disabled:opacity-30"
                   aria-label="Delete step"
                   style={{ color: muted }}
                 >
@@ -518,10 +557,7 @@ function DreamDetailsContent() {
             </h2>
           </div>
 
-          <p
-            className="mt-2 text-sm"
-            style={{ color: muted }}
-          >
+          <p className="mt-2 text-sm" style={{ color: muted }}>
             Write down progress, thoughts, signs, little wins or
             anything you want to remember along the way.
           </p>
@@ -560,17 +596,15 @@ function DreamDetailsContent() {
                 className="rounded-xl p-5"
                 style={{ background: "#FAF7F3" }}
               >
-                <p
-                  className="text-xs"
-                  style={{ color: muted }}
-                >
-                  {new Date(
-                    update.createdAt,
-                  ).toLocaleDateString("en-US", {
-                    month: "long",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
+                <p className="text-xs" style={{ color: muted }}>
+                  {new Date(update.createdAt).toLocaleDateString(
+                    "en-US",
+                    {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    },
+                  )}
                 </p>
 
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-7">
@@ -631,31 +665,132 @@ function DreamDetailsContent() {
           </section>
         )}
 
-        {/* Already manifested */}
+        {/* Manifested celebration */}
         {dream.status === "manifested" && (
           <section
-            className="mt-8 rounded-2xl p-8 text-center"
+            className="relative mt-8 overflow-hidden rounded-3xl p-8 text-center md:p-12"
             style={{ background: "#EAE0D6" }}
           >
-            <span className="text-3xl">✨🤎✨</span>
+            <style jsx>{`
+              @keyframes celebrationPop {
+                0% {
+                  transform: scale(0.5);
+                  opacity: 0;
+                }
+                60% {
+                  transform: scale(1.15);
+                  opacity: 1;
+                }
+                100% {
+                  transform: scale(1);
+                  opacity: 1;
+                }
+              }
 
-            <h2
-              className="mt-3 text-3xl"
-              style={{ fontFamily: "var(--font-gloock)" }}
-            >
-              This dream is now your reality.
-            </h2>
+              @keyframes sparkleFloat {
+                0% {
+                  transform: translateY(15px) scale(0.5);
+                  opacity: 0;
+                }
+                50% {
+                  opacity: 1;
+                }
+                100% {
+                  transform: translateY(-25px) scale(1.2);
+                  opacity: 0;
+                }
+              }
+            `}</style>
 
-            <p
-              className="mt-2 text-sm"
-              style={{ color: muted }}
+            {/* Floating celebration */}
+            {justManifested && (
+              <div className="pointer-events-none absolute inset-0">
+                {["✨", "🤎", "🌸", "⭐", "✨", "🌷", "🤎"].map(
+                  (symbol, index) => (
+                    <span
+                      key={index}
+                      className="absolute text-xl"
+                      style={{
+                        left: `${10 + index * 12}%`,
+                        top: `${20 + (index % 3) * 20}%`,
+                        animation: `sparkleFloat ${
+                          1.5 + (index % 3) * 0.4
+                        }s ease-out forwards`,
+                        animationDelay: `${index * 0.12}s`,
+                      }}
+                    >
+                      {symbol}
+                    </span>
+                  ),
+                )}
+              </div>
+            )}
+
+            <div
+              className="relative"
+              style={{
+                animation: justManifested
+                  ? "celebrationPop 0.6s ease-out"
+                  : undefined,
+              }}
             >
-              Take a moment. You did it.
-            </p>
+              <span className="text-4xl">✨🤎✨</span>
+
+              <h2
+                className="mt-4 text-3xl leading-snug md:text-4xl"
+                style={{ fontFamily: "var(--font-gloock)" }}
+              >
+                This dream is now your reality.
+              </h2>
+
+              <p
+                className="mt-3 text-sm leading-7"
+                style={{ color: muted }}
+              >
+                Take a moment. You did it. Every little step,
+                every bit of faith, every moment you kept going.
+              </p>
+
+              {/* Manifestation date */}
+              {dream.manifested_at && (
+                <div
+                  className="mt-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm"
+                  style={{
+                    background: cream,
+                    color: brown,
+                  }}
+                >
+                  <CalendarDays size={15} />
+
+                  Manifested on{" "}
+                  {new Date(dream.manifested_at).toLocaleDateString(
+                    "en-US",
+                    {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    },
+                  )}
+                </div>
+              )}
+
+              <div className="mt-7">
+                <span
+                  className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm"
+                  style={{
+                    background: brown,
+                    color: cream,
+                  }}
+                >
+                  <Sparkles size={15} />
+                  Dream manifested
+                </span>
+              </div>
+            </div>
           </section>
         )}
 
-        {/* Save state */}
+        {/* Saving */}
         {saving && (
           <p
             className="mt-4 text-center text-xs"
@@ -665,6 +800,7 @@ function DreamDetailsContent() {
           </p>
         )}
 
+        {/* Error */}
         {error && (
           <p
             className="mt-4 text-center text-sm"

@@ -42,6 +42,7 @@ export interface Dream {
   cover_image: string | null;
   steps: DreamStep[];
   updates: DreamUpdate[];
+  manifested_at?: string | null;
   created_at: string;
   updated_at: string;
 }
