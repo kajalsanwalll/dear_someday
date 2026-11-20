@@ -37,6 +37,7 @@ export interface Dream {
   description: string;
   why: string;
   category: DreamCategory;
+  past_self_letter?: string | null;
   status: DreamStatus;
   target_date: string | null;
   cover_image: string | null;

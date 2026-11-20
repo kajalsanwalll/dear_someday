@@ -22,12 +22,7 @@ const navigation = [
   { label: "My dreams", href: "/dreams", icon: Sparkles },
   { label: "It came true", href: "/it-came-true", icon: Camera },
   { label: "Affirmations", href: "/affirmations", icon: Heart },
-  { label: "Manifestations",href: "/manifestations",icon: Sparkles},
-  {
-  label: "Journal",
-  href: "/journal",
-  icon: BookOpen,
-},
+  {label: "Journal",href: "/journal",icon: BookOpen,},
 ];
 
 export default function Sidebar() {
